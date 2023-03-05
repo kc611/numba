@@ -1,0 +1,4 @@
+[tool.towncrier]
+package = "Numba"
+
+directory = "maint/upcoming_changes"
