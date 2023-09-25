@@ -12,7 +12,7 @@ from numba.core.controlflow import NEW_BLOCKERS, CFGraph
 from numba.core.ir import Loc
 from numba.core.errors import UnsupportedError
 
-
+logging.basicConfig(level=logging.DEBUG)
 _logger = logging.getLogger(__name__)
 
 _EXCEPT_STACK_OFFSET = 6
@@ -425,6 +425,10 @@ class TraceRunner(object):
     def op_POP_TOP(self, state, inst):
         state.pop()
 
+    def op_END_FOR(self, state, inst):
+        state.pop()
+        state.pop()
+
     if PYVERSION >= (3, 11):
         def op_LOAD_GLOBAL(self, state, inst):
             res = state.make_temp()
@@ -461,6 +465,8 @@ class TraceRunner(object):
     def op_LOAD_ATTR(self, state, inst):
         item = state.pop()
         res = state.make_temp()
+        if inst.arg & 1:
+            state.push(state.make_null())
         state.append(inst, item=item, res=res)
         state.push(res)
 
@@ -792,6 +798,11 @@ class TraceRunner(object):
         state.append(inst, retval=state.pop(), castval=state.make_temp())
         state.terminate()
 
+    def op_RETURN_CONST(self, state, inst):
+        res = state.make_temp("const")
+        state.append(inst, retval=res)
+        state.terminate()
+
     def op_YIELD_VALUE(self, state, inst):
         val = state.pop()
         res = state.make_temp()
@@ -1018,6 +1029,12 @@ class TraceRunner(object):
         index = state.pop()
         target = state.pop()
         state.append(inst, target=target, index=index)
+
+    def op_BINARY_SLICE(self, state, inst):
+        end = state.pop()
+        start = state.pop()
+        container = state.pop()
+        # TODO: Complete this
 
     def op_CALL(self, state, inst):
         narg = inst.arg
@@ -1271,7 +1288,7 @@ class TraceRunner(object):
                      pred=pred)
         state.push(indval)
         end = inst.get_jump_target()
-        state.fork(pc=end, npop=2)
+        state.fork(pc=end)
         state.fork(pc=inst.next)
 
     def op_GEN_START(self, state, inst):
@@ -1707,7 +1724,7 @@ class _State(object):
                 stack.append(self.make_temp())
         # Handle changes on the blockstack
         blockstack = list(self._blockstack)
-        if PYVERSION == (3, 11):
+        if PYVERSION >= (3, 11):
             # pop expired block in destination pc
             while blockstack:
                 top = blockstack[-1]

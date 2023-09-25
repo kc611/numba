@@ -2,6 +2,7 @@ from collections import namedtuple, OrderedDict
 import dis
 import inspect
 import itertools
+from opcode import _inline_cache_entries
 from types import CodeType, ModuleType
 
 from numba.core import errors, utils, serialize
@@ -98,8 +99,10 @@ class ByteCodeInst(object):
                                          "POP_JUMP_BACKWARD_IF_NONE",
                                          "POP_JUMP_BACKWARD_IF_NOT_NONE",)):
                 return self.offset - (self.arg - 1) * 2
-        elif PYVERSION > (3, 11):
-            raise NotImplementedError(PYVERSION)
+        elif PYVERSION == (3, 12):
+            if self.opcode in (dis.opmap[k]
+                               for k in ("JUMP_BACKWARD",)):
+                return self.offset - (self.arg - 1) * 2
 
         if PYVERSION >= (3, 10):
             if self.opcode in JREL_OPS:
@@ -148,12 +151,13 @@ def _unpack_opargs(code):
     offset = i = 0
     while i < n:
         op = code[i]
+        cache_offset = _inline_cache_entries[op] * 2
         i += CODE_LEN
         if op >= HAVE_ARGUMENT:
             arg = code[i] | extended_arg
             for j in range(ARG_LEN):
                 arg |= code[i + j] << (8 * j)
-            i += ARG_LEN
+            i += ARG_LEN + cache_offset
             if op == EXTENDED_ARG:
                 # This is a deviation from what dis does...
                 # In python 3.11 it seems like EXTENDED_ARGs appear more often
@@ -167,11 +171,11 @@ def _unpack_opargs(code):
                 continue
         else:
             arg = None
-            i += NO_ARG_LEN
+            i += NO_ARG_LEN + cache_offset
 
         extended_arg = 0
         yield (offset, op, arg, i)
-        offset = i  # Mark inst offset at first extended
+        offset = i # Mark inst offset at first extended
 
 
 def _patched_opargs(bc_stream):

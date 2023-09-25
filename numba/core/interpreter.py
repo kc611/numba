@@ -2175,7 +2175,8 @@ class Interpreter(object):
 
     def op_LOAD_ATTR(self, inst, item, res):
         item = self.get(item)
-        attr = self.code_names[inst.arg]
+        new_arg = inst.arg >> 1
+        attr = self.code_names[new_arg]
         getattr = ir.Expr.getattr(item, attr, loc=self.loc)
         self.store(getattr, res)
 
@@ -2200,6 +2201,28 @@ class Interpreter(object):
         else:
             const = ir.Const(value, loc=self.loc)
         self.store(const, res)
+
+    def op_RETURN_CONST(self, inst, res):
+        value = self.code_consts[inst.arg]
+        if isinstance(value, tuple):
+            st = []
+            for x in value:
+                nm = '$const_%s' % str(x)
+                val_const = ir.Const(x, loc=self.loc)
+                target = self.store(val_const, name=nm, redefine=True)
+                st.append(target)
+            const = ir.Expr.build_tuple(st, loc=self.loc)
+        elif isinstance(value, frozenset):
+            st = []
+            for x in value:
+                nm = '$const_%s' % str(x)
+                val_const = ir.Const(x, loc=self.loc)
+                target = self.store(val_const, name=nm, redefine=True)
+                st.append(target)
+            const = ir.Expr.build_set(st, loc=self.loc)
+        else:
+            const = ir.Const(value, loc=self.loc)
+        # TODO: Return the value
 
     if PYVERSION >= (3, 11):
         def op_LOAD_GLOBAL(self, inst, idx, res):
@@ -2782,7 +2805,7 @@ class Interpreter(object):
         self.current_block.append(ret)
 
     def op_COMPARE_OP(self, inst, lhs, rhs, res):
-        op = dis.cmp_op[inst.arg]
+        op = dis.cmp_op[inst.arg >> 4]
         if op == 'in' or op == 'not in':
             lhs, rhs = rhs, lhs
 
