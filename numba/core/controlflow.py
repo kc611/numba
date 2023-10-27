@@ -953,6 +953,10 @@ class ControlFlowAnalysis(object):
         self._curblock.terminating = True
         self._force_new_block = True
 
+    def op_RETURN_CONST(self, inst):
+        self._curblock.terminating = True
+        self._force_new_block = True
+
     def op_RAISE_VARARGS(self, inst):
         self._curblock.terminating = True
         self._force_new_block = True
