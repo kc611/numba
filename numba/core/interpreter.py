@@ -2334,8 +2334,8 @@ class Interpreter(object):
         if PYVERSION >= (3, 12):
             if exitpt > self.last_active_offset:
                 # Use exception entries to figure out end of syntax block
-                end = max([ex.end for ex in self.active_exception_entries
-                           if ex.target == end])
+                exitpt = max([ex.end for ex in self.active_exception_entries
+                           if ex.target == exitpt])
         wth = ir.With(inst.offset, exit=exitpt)
         self.syntax_blocks.append(wth)
         ctxmgr = self.get(contextmanager)
