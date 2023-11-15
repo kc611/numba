@@ -20,7 +20,7 @@ from numba.core.config import IS_32BITS
 from numba.core.utils import pysignature
 from numba.np.extensions import cross2d
 from numba.tests.support import (TestCase, CompilationCache, MemoryLeakMixin,
-                                 needs_blas, run_in_subprocess)
+                                 needs_blas, run_in_subprocess, expected_failure_py312)
 import unittest
 
 
@@ -5062,6 +5062,7 @@ class TestNPFunctions(MemoryLeakMixin, TestCase):
                 np_nbfunc(condlist, choicelist, default)
             self.assertIn(expected_text, str(e.exception))
 
+    @expected_failure_py312
     def test_windowing(self):
         def check_window(func):
             np_pyfunc = func

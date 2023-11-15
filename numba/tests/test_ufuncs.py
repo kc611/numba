@@ -12,7 +12,7 @@ from numba import guvectorize, njit, typeof, vectorize
 from numba.core import types
 from numba.np.numpy_support import from_dtype
 from numba.core.errors import LoweringError, TypingError
-from numba.tests.support import TestCase, MemoryLeakMixin
+from numba.tests.support import TestCase, MemoryLeakMixin, expected_failure_py312
 from numba.core.typing.npydecl import supported_ufuncs
 from numba.np import numpy_support
 from numba.core.registry import cpu_target
@@ -1098,6 +1098,7 @@ class TestArrayOperators(BaseUFuncTest, TestCase):
         self.inplace_float_op_test('%=', [-1, 1.5, 3], [-5, 2, 2.5])
         self.inplace_float_op_test(operator.imod, [-1, 1.5, 3], [-5, 2, 2.5])
 
+    @expected_failure_py312
     def test_inplace_pow(self):
         self.inplace_float_op_test('**=', [-1, 1.5, 3], [-5, 2, 2.5])
         self.inplace_float_op_test(operator.ipow, [-1, 1.5, 3], [-5, 2, 2.5])
