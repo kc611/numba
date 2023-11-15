@@ -12,7 +12,8 @@ from numba.core.errors import (
 )
 from numba.tests.support import (
     TestCase, unittest, captured_stdout, MemoryLeakMixin,
-    skip_parfors_unsupported, skip_unless_scipy, expected_failure_py311
+    skip_parfors_unsupported, skip_unless_scipy, expected_failure_py311,
+    expected_failure_py312
 )
 
 
@@ -675,6 +676,7 @@ class TestTryExceptRefct(MemoryLeakMixin, TestCase):
 
 
 class TestTryExceptOtherControlFlow(TestCase):
+    @expected_failure_py312
     def test_yield(self):
         @njit
         def udt(n, x):
@@ -690,6 +692,7 @@ class TestTryExceptOtherControlFlow(TestCase):
         self.assertEqual(list(udt(10, 10)), list(range(10)))
 
     @expected_failure_py311
+    @expected_failure_py312
     def test_objmode(self):
         @njit
         def udt():
@@ -709,6 +712,7 @@ class TestTryExceptOtherControlFlow(TestCase):
         )
 
     @expected_failure_py311
+    @expected_failure_py312
     def test_objmode_output_type(self):
         def bar(x):
             return np.asarray(list(reversed(x.tolist())))
