@@ -433,28 +433,34 @@ class ByteCodePy312(ByteCodePy311):
             start_offset = start_entry.start
             target_offset = start_entry.target
             end_offset = end_entry.end
-
+            # These are the entries scheduled to be removed.
             to_be_removed_entries = [
                 e for e in entries if (e.start >= start_offset and\
                                         e.end <= end_offset and\
                                         e.target == target_offset)
             ]
 
+            # Find two exceptions that sandwiches the above exceptions
             lower_entry_idx = entries.index(to_be_removed_entries[0]) - 1
             upper_entry_idx = entries.index(to_be_removed_entries[-1]) + 1
 
+            # If such exceptions found with same target club them into a
+            # single exception block spanning over the entire region
             if lower_entry_idx >= 0 and upper_entry_idx < len(entries):
                 lower_entry = entries[lower_entry_idx]
                 upper_entry = entries[upper_entry_idx]
                 if lower_entry.target == upper_entry.target:
-                    entries[lower_entry_idx] = _ExceptionTableEntry(lower_entry.start, upper_entry.end, lower_entry.target, 
-                                                                    lower_entry.depth, upper_entry.lasti)
+                    entries[lower_entry_idx] = _ExceptionTableEntry(
+                        lower_entry.start, upper_entry.end,
+                        lower_entry.target, lower_entry.depth,
+                        upper_entry.lasti)
                     entries.remove(upper_entry)
-            
+            # Find all the dead exceptions starting from the target that
+            # now no longer exists
             dead_entries = [
                 e for e in entries if e.start == target_offset
             ]
-
+            # Remove all the scheduled exceptions along with the dead exceptions.
             entries = [e for e in entries if e not in to_be_removed_entries]
             entries = [e for e in entries if e not in dead_entries]
             return entries
