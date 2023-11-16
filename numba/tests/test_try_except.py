@@ -676,7 +676,6 @@ class TestTryExceptRefct(MemoryLeakMixin, TestCase):
 
 
 class TestTryExceptOtherControlFlow(TestCase):
-    @expected_failure_py312
     def test_yield(self):
         @njit
         def udt(n, x):
