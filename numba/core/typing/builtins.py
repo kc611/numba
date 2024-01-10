@@ -3,7 +3,7 @@ import itertools
 import numpy as np
 import operator
 
-from numba.core import types, errors
+from numba.core import types, errors, config
 from numba import prange
 from numba.parfors.parfor import internal_prange
 
@@ -165,11 +165,38 @@ integer_binop_cases = tuple(
     for op1, op2 in itertools.product(machine_ints, machine_ints)
     )
 
+if not config.USE_LEGACY_TYPE_SYSTEM:
+    def choose_result_int_new(*inputs):
+        """
+        Choose the integer result type for an operation on integer inputs,
+        according to the integer typing NBEP. In accordance with the new
+        type system.
+        """
+        bitwidth = choose_result_bitwidth(*inputs)
+        signed = any(tp.signed for tp in inputs)
+
+        # If any integer is a numpy integer, promotion should be to the
+        # respective numpy type.
+        if any('np' in tp.name for tp in inputs):
+            return types.NumPyInteger.from_bitwidth(bitwidth, signed)
+        
+        return types.PythonInteger.from_bitwidth(bitwidth, signed)
+    
+    all_ints = (
+        sorted(set((types.py_intp, types.py_int64))) +
+        sorted(set((types.np_intp, types.np_int64))) +
+        sorted(set((types.np_uintp, types.np_uint64)))
+        )
+    integer_binop_cases = tuple(
+        signature(choose_result_int_new(op1, op2), op1, op2)
+        for op1, op2 in itertools.product(all_ints, all_ints)
+        )
 
 class BinOp(ConcreteTemplate):
     cases = list(integer_binop_cases)
-    cases += [signature(op, op, op) for op in sorted(types.real_domain)]
-    cases += [signature(op, op, op) for op in sorted(types.complex_domain)]
+    if config.USE_LEGACY_TYPE_SYSTEM:
+        cases += [signature(op, op, op) for op in sorted(types.real_domain)]
+        cases += [signature(op, op, op) for op in sorted(types.complex_domain)]
 
 
 @infer_global(operator.add)

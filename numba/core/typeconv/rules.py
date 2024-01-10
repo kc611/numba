@@ -1,6 +1,6 @@
 import itertools
 from .typeconv import TypeManager, TypeCastingRules
-from numba.core import types
+from numba.core import types, config
 
 
 default_type_manager = TypeManager()
@@ -57,6 +57,17 @@ def _init_casting_rules(tm):
 
     return tcr
 
+def _init_casting_rules_new(tm):
+    tcr = TypeCastingRules(tm)
+    tcr.safe(types.py_int32, types.np_int32)
+    tcr.safe(types.py_int64, types.np_int64)
 
-default_casting_rules = _init_casting_rules(default_type_manager)
+    tcr.promote_unsafe(types.py_int32, types.py_int64)
+    tcr.promote_unsafe(types.np_int32, types.np_int64)
 
+    return tcr
+
+if config.USE_LEGACY_TYPE_SYSTEM:
+    default_casting_rules = _init_casting_rules(default_type_manager)
+else:
+    default_casting_rules = _init_casting_rules_new(default_type_manager)

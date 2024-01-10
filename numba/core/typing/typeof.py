@@ -6,7 +6,7 @@ import enum
 import numpy as np
 from numpy.random.bit_generator import BitGenerator
 
-from numba.core import types, utils, errors
+from numba.core import types, utils, errors, config
 from numba.np import numpy_support
 
 
@@ -126,21 +126,26 @@ def _typeof_float(val, c):
 def _typeof_complex(val, c):
     return types.complex128
 
-
-@typeof_impl.register(int)
-def _typeof_int(val, c):
-    # As in _typeof.c
-    nbits = utils.bit_length(val)
-    if nbits < 32:
-        typ = types.intp
-    elif nbits < 64:
-        typ = types.int64
-    elif nbits == 64 and val >= 0:
-        typ = types.uint64
-    else:
-        raise ValueError("Int value is too large: %s" % val)
-    return typ
-
+if config.USE_LEGACY_TYPE_SYSTEM:
+    @typeof_impl.register(int)
+    def _typeof_int(val, c):
+        # As in _typeof.c
+        nbits = utils.bit_length(val)
+        if nbits < 32:
+            typ = types.intp
+        elif nbits < 64:
+            typ = types.int64
+        elif nbits == 64 and val >= 0:
+            typ = types.uint64
+        else:
+            raise ValueError("Int value is too large: %s" % val)
+        return typ
+else:
+    @typeof_impl.register(int)
+    def _typeof_int(val, c):
+        # As in _typeof.c
+        typ = types.py_intp
+        return typ
 
 @typeof_impl.register(np.generic)
 def _typeof_numpy_scalar(val, c):

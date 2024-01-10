@@ -11,7 +11,7 @@ from numba.core.imputils import (lower_builtin, lower_getattr,
                                     lower_getattr_generic, lower_cast,
                                     lower_constant, impl_ret_borrowed,
                                     impl_ret_untracked)
-from numba.core import typing, types, utils, errors, cgutils, optional
+from numba.core import typing, types, utils, errors, cgutils, optional, config
 from numba.core.extending import intrinsic, overload_method
 from numba.cpython.unsafe.numbers import viewer
 
@@ -549,9 +549,25 @@ lower_builtin(operator.pos, types.boolean)(bool_unary_positive_impl)
 
 def _implement_integer_operators():
     ty = types.Integer
+    
+    if not config.USE_LEGACY_TYPE_SYSTEM:
+        np_ty = types.NumPyInteger
+        py_ty = types.PythonInteger
 
     lower_builtin(operator.add, ty, ty)(int_add_impl)
     lower_builtin(operator.iadd, ty, ty)(int_add_impl)
+
+    if not config.USE_LEGACY_TYPE_SYSTEM:
+        lower_builtin(operator.add, py_ty, py_ty)(int_add_impl)
+        lower_builtin(operator.add, np_ty, py_ty)(int_add_impl)
+        lower_builtin(operator.add, py_ty, np_ty)(int_add_impl)
+        lower_builtin(operator.add, np_ty, np_ty)(int_add_impl)
+
+        lower_builtin(operator.iadd, py_ty, py_ty)(int_add_impl)
+        lower_builtin(operator.iadd, np_ty, py_ty)(int_add_impl)
+        lower_builtin(operator.iadd, py_ty, np_ty)(int_add_impl)
+        lower_builtin(operator.iadd, np_ty, np_ty)(int_add_impl)
+    
     lower_builtin(operator.sub, ty, ty)(int_sub_impl)
     lower_builtin(operator.isub, ty, ty)(int_sub_impl)
     lower_builtin(operator.mul, ty, ty)(int_mul_impl)

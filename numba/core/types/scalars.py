@@ -3,6 +3,7 @@ import enum
 import numpy as np
 
 from .abstract import Dummy, Hashable, Literal, Number, Type
+from .utils import parse_integer_bitwidth, parse_integer_signed
 from functools import total_ordering, cached_property
 from numba.core import utils
 from numba.core.typeconv import Conversion
@@ -13,19 +14,6 @@ class Boolean(Hashable):
 
     def cast_python_value(self, value):
         return bool(value)
-
-
-def parse_integer_bitwidth(name):
-    for prefix in ('int', 'uint'):
-        if name.startswith(prefix):
-            bitwidth = int(name[len(prefix):])
-    return bitwidth
-
-
-def parse_integer_signed(name):
-    signed = name.startswith('int')
-    return signed
-
 
 @total_ordering
 class Integer(Number):

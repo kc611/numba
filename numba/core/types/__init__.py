@@ -125,7 +125,7 @@ optional = Optional
 
 deferred_type = DeferredType
 
-__all__ = '''
+all_str = '''
 int8
 int16
 int32
@@ -178,4 +178,49 @@ optional
 ffi_forced_object
 ffi
 deferred_type
-'''.split()
+'''
+
+if not config.USE_LEGACY_TYPE_SYSTEM:
+    from .python_types import *
+    from .numpy_types import *
+    from .machine_types import *
+
+    # Machine Integers
+    byte = MachineInteger('c_int8')
+
+    # Python Integers
+    py_int32 = PythonInteger('py_int32')
+    py_int64 = PythonInteger('py_int64')
+
+    py_intp = py_int32 if utils.MACHINE_BITS == 32 else py_int64
+
+    # Numpy Integers
+    np_int8 = NumPyInteger('np_int8')
+    np_int16 = NumPyInteger('np_int16')
+    np_int32 = NumPyInteger('np_int32')
+    np_int64 = NumPyInteger('np_int64')
+    np_uint8 = NumPyInteger('np_uint8')
+    np_uint16 = NumPyInteger('np_uint16')
+    np_uint32 = NumPyInteger('np_uint32')
+    np_uint64 = NumPyInteger('np_uint64')
+
+    np_intp = np_int32 if utils.MACHINE_BITS == 32 else np_int64
+    np_uintp = np_uint32 if utils.MACHINE_BITS == 32 else np_uint64
+
+    all_str = all_str + '''
+    py_int32
+    py_int64
+    py_intp
+    np_int8
+    np_int16
+    np_int32
+    np_int64
+    np_uint8
+    np_uint16
+    np_uint32
+    np_uint64
+    np_intp
+    np_uintp
+    '''
+
+__all__ = all_str.split()

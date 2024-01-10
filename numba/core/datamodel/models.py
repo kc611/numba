@@ -4,7 +4,7 @@ from collections import deque
 from llvmlite import ir
 
 from numba.core.datamodel.registry import register_default
-from numba.core import types, cgutils
+from numba.core import types, cgutils, config
 from numba.np import numpy_support
 
 
@@ -358,6 +358,20 @@ class IntegerModel(PrimitiveModel):
         be_type = ir.IntType(fe_type.bitwidth)
         super(IntegerModel, self).__init__(dmm, fe_type, be_type)
 
+if not config.USE_LEGACY_TYPE_SYSTEM:
+    @register_default(types.PythonInteger)
+    @register_default(types.PythonIntegerLiteral)
+    class PythonIntegerModel(PrimitiveModel):
+        def __init__(self, dmm, fe_type):
+            be_type = ir.IntType(fe_type.bitwidth)
+            super(PythonIntegerModel, self).__init__(dmm, fe_type, be_type)
+
+    @register_default(types.NumPyInteger)
+    @register_default(types.NumPyIntegerLiteral)
+    class NumPyIntegerModel(PrimitiveModel):
+        def __init__(self, dmm, fe_type):
+            be_type = ir.IntType(fe_type.bitwidth)
+            super(NumPyIntegerModel, self).__init__(dmm, fe_type, be_type)
 
 @register_default(types.Float)
 class FloatModel(PrimitiveModel):

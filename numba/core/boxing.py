@@ -4,7 +4,7 @@ Boxing and unboxing of native Numba values to / from CPython objects.
 
 from llvmlite import ir
 
-from numba.core import types, cgutils
+from numba.core import types, cgutils, config
 from numba.core.pythonapi import box, unbox, reflect, NativeValue
 from numba.core.errors import NumbaNotImplementedError, TypingError
 from numba.core.typing.typeof import typeof, Purpose
@@ -61,6 +61,61 @@ def unbox_integer(typ, obj, c):
     return NativeValue(c.builder.load(val),
                        is_error=c.pyapi.c_api_error())
 
+if not config.USE_LEGACY_TYPE_SYSTEM:
+    @box(types.PythonIntegerLiteral)
+    @box(types.NumPyIntegerLiteral)
+    def box_py_literal_integer(typ, val, c):
+        val = c.context.cast(c.builder, val, typ, typ.literal_type)
+        return c.box(typ.literal_type, val)
+
+
+    @box(types.PythonInteger)
+    def box_py_integer(typ, val, c):
+        if typ.signed:
+            ival = c.builder.sext(val, c.pyapi.longlong)
+            return c.pyapi.long_from_longlong(ival)
+        else:
+            ullval = c.builder.zext(val, c.pyapi.ulonglong)
+            return c.pyapi.long_from_ulonglong(ullval)
+
+    @unbox(types.PythonInteger)
+    def unbox_py_integer(typ, obj, c):
+        ll_type = c.context.get_argument_type(typ)
+        val = cgutils.alloca_once(c.builder, ll_type)
+        longobj = c.pyapi.number_long(obj)
+        with c.pyapi.if_object_ok(longobj):
+            if typ.signed:
+                llval = c.pyapi.long_as_longlong(longobj)
+            else:
+                llval = c.pyapi.long_as_ulonglong(longobj)
+            c.pyapi.decref(longobj)
+            c.builder.store(c.builder.trunc(llval, ll_type), val)
+        return NativeValue(c.builder.load(val),
+                        is_error=c.pyapi.c_api_error())
+
+    @box(types.NumPyInteger)
+    def box_np_integer(typ, val, c):
+        if typ.signed:
+            ival = c.builder.sext(val, c.pyapi.longlong)
+            return c.pyapi.long_from_longlong(ival)
+        else:
+            ullval = c.builder.zext(val, c.pyapi.ulonglong)
+            return c.pyapi.long_from_ulonglong(ullval)
+
+    @unbox(types.NumPyInteger)
+    def unbox_np_integer(typ, obj, c):
+        ll_type = c.context.get_argument_type(typ)
+        val = cgutils.alloca_once(c.builder, ll_type)
+        longobj = c.pyapi.number_long(obj)
+        with c.pyapi.if_object_ok(longobj):
+            if typ.signed:
+                llval = c.pyapi.long_as_longlong(longobj)
+            else:
+                llval = c.pyapi.long_as_ulonglong(longobj)
+            c.pyapi.decref(longobj)
+            c.builder.store(c.builder.trunc(llval, ll_type), val)
+        return NativeValue(c.builder.load(val),
+                        is_error=c.pyapi.c_api_error())
 
 @box(types.Float)
 def box_float(typ, val, c):

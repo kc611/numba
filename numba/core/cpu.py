@@ -71,6 +71,8 @@ class CPUContext(BaseContext):
                                    listobj, numbers, rangeobj, # noqa F401
                                    setobj, slicing, tupleobj, # noqa F401
                                    unicode,) # noqa F401
+        if not numba.core.config.USE_LEGACY_TYPE_SYSTEM:
+            from numba.core import casting # noqa F401
         from numba.core import optional # noqa F401
         from numba.misc import gdb_hook, literal # noqa F401
         from numba.np import linalg, arraymath, arrayobj # noqa F401
