@@ -95,12 +95,19 @@ if not config.USE_LEGACY_TYPE_SYSTEM:
 
     @box(types.NumPyInteger)
     def box_np_integer(typ, val, c):
-        if typ.signed:
-            ival = c.builder.sext(val, c.pyapi.longlong)
-            return c.pyapi.long_from_longlong(ival)
-        else:
-            ullval = c.builder.zext(val, c.pyapi.ulonglong)
-            return c.pyapi.long_from_ulonglong(ullval)
+        type_str = typ.name.split('_')[-1]
+
+        py_int = box_py_integer(types.py_intp, val, c)
+
+        numpy_name = c.context.insert_const_string(c.builder.module, 'numpy')
+        numpy_module = c.pyapi.import_module_noblock(numpy_name)
+        int_constructor = c.pyapi.object_getattr_string(numpy_module, type_str)
+
+        np_int = c.pyapi.call_function_objargs(int_constructor, (py_int,))
+        c.pyapi.decref(int_constructor)
+        c.pyapi.decref(py_int)
+
+        return np_int
 
     @unbox(types.NumPyInteger)
     def unbox_np_integer(typ, obj, c):
