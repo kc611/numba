@@ -175,52 +175,6 @@ class OmittedArgDataModel(DataModel):
         assert val == (), val
         return None
 
-
-@register_default(types.Boolean)
-@register_default(types.BooleanLiteral)
-class BooleanModel(DataModel):
-    _bit_type = ir.IntType(1)
-    _byte_type = ir.IntType(8)
-
-    def get_value_type(self):
-        return self._bit_type
-
-    def get_data_type(self):
-        return self._byte_type
-
-    def get_return_type(self):
-        return self.get_data_type()
-
-    def get_argument_type(self):
-        return self.get_data_type()
-
-    def as_data(self, builder, value):
-        return builder.zext(value, self.get_data_type())
-
-    def as_argument(self, builder, value):
-        return self.as_data(builder, value)
-
-    def as_return(self, builder, value):
-        return self.as_data(builder, value)
-
-    def from_data(self, builder, value):
-        ty = self.get_value_type()
-        resalloca = cgutils.alloca_once(builder, ty)
-        cond = builder.icmp_unsigned('==', value, value.type(0))
-        with builder.if_else(cond) as (then, otherwise):
-            with then:
-                builder.store(ty(0), resalloca)
-            with otherwise:
-                builder.store(ty(1), resalloca)
-        return builder.load(resalloca)
-
-    def from_argument(self, builder, value):
-        return self.from_data(builder, value)
-
-    def from_return(self, builder, value):
-        return self.from_data(builder, value)
-
-
 class PrimitiveModel(DataModel):
     """A primitive type can be represented natively in the target in all
     usage contexts.
@@ -287,235 +241,6 @@ class ProxyModel(DataModel):
     def from_return(self, builder, value):
         return self._proxied_model.from_return(builder, value)
 
-
-@register_default(types.EnumMember)
-@register_default(types.IntEnumMember)
-class EnumModel(ProxyModel):
-    """
-    Enum members are represented exactly like their values.
-    """
-    def __init__(self, dmm, fe_type):
-        super(EnumModel, self).__init__(dmm, fe_type)
-        self._proxied_model = dmm.lookup(fe_type.dtype)
-
-
-@register_default(types.Opaque)
-@register_default(types.PyObject)
-@register_default(types.RawPointer)
-@register_default(types.NoneType)
-@register_default(types.StringLiteral)
-@register_default(types.EllipsisType)
-@register_default(types.Function)
-@register_default(types.Type)
-@register_default(types.Object)
-@register_default(types.Module)
-@register_default(types.Phantom)
-@register_default(types.UndefVar)
-@register_default(types.ContextManager)
-@register_default(types.Dispatcher)
-@register_default(types.ObjModeDispatcher)
-@register_default(types.ExceptionClass)
-@register_default(types.Dummy)
-@register_default(types.ExceptionInstance)
-@register_default(types.ExternalFunction)
-@register_default(types.EnumClass)
-@register_default(types.IntEnumClass)
-@register_default(types.NumberClass)
-@register_default(types.TypeRef)
-@register_default(types.NamedTupleClass)
-@register_default(types.DType)
-@register_default(types.RecursiveCall)
-@register_default(types.MakeFunctionLiteral)
-@register_default(types.Poison)
-class OpaqueModel(PrimitiveModel):
-    """
-    Passed as opaque pointers
-    """
-    _ptr_type = ir.IntType(8).as_pointer()
-
-    def __init__(self, dmm, fe_type):
-        be_type = self._ptr_type
-        super(OpaqueModel, self).__init__(dmm, fe_type, be_type)
-
-
-@register_default(types.MemInfoPointer)
-class MemInfoModel(OpaqueModel):
-
-    def inner_models(self):
-        return [self._dmm.lookup(self._fe_type.dtype)]
-
-    def has_nrt_meminfo(self):
-        return True
-
-    def get_nrt_meminfo(self, builder, value):
-        return value
-
-
-@register_default(types.Integer)
-@register_default(types.IntegerLiteral)
-class IntegerModel(PrimitiveModel):
-    def __init__(self, dmm, fe_type):
-        be_type = ir.IntType(fe_type.bitwidth)
-        super(IntegerModel, self).__init__(dmm, fe_type, be_type)
-
-if not config.USE_LEGACY_TYPE_SYSTEM:
-    @register_default(types.PythonInteger)
-    @register_default(types.PythonIntegerLiteral)
-    class PythonIntegerModel(PrimitiveModel):
-        def __init__(self, dmm, fe_type):
-            be_type = ir.IntType(fe_type.bitwidth)
-            super(PythonIntegerModel, self).__init__(dmm, fe_type, be_type)
-
-    @register_default(types.NumPyInteger)
-    @register_default(types.NumPyIntegerLiteral)
-    class NumPyIntegerModel(PrimitiveModel):
-        def __init__(self, dmm, fe_type):
-            be_type = ir.IntType(fe_type.bitwidth)
-            super(NumPyIntegerModel, self).__init__(dmm, fe_type, be_type)
-
-@register_default(types.Float)
-class FloatModel(PrimitiveModel):
-    def __init__(self, dmm, fe_type):
-        if fe_type == types.float32:
-            be_type = ir.FloatType()
-        elif fe_type == types.float64:
-            be_type = ir.DoubleType()
-        else:
-            raise NotImplementedError(fe_type)
-        super(FloatModel, self).__init__(dmm, fe_type, be_type)
-
-
-@register_default(types.CPointer)
-class PointerModel(PrimitiveModel):
-    def __init__(self, dmm, fe_type):
-        self._pointee_model = dmm.lookup(fe_type.dtype)
-        self._pointee_be_type = self._pointee_model.get_data_type()
-        be_type = self._pointee_be_type.as_pointer()
-        super(PointerModel, self).__init__(dmm, fe_type, be_type)
-
-
-@register_default(types.EphemeralPointer)
-class EphemeralPointerModel(PointerModel):
-
-    def get_data_type(self):
-        return self._pointee_be_type
-
-    def as_data(self, builder, value):
-        value = builder.load(value)
-        return self._pointee_model.as_data(builder, value)
-
-    def from_data(self, builder, value):
-        raise NotImplementedError("use load_from_data_pointer() instead")
-
-    def load_from_data_pointer(self, builder, ptr, align=None):
-        return builder.bitcast(ptr, self.get_value_type())
-
-
-@register_default(types.EphemeralArray)
-class EphemeralArrayModel(PointerModel):
-
-    def __init__(self, dmm, fe_type):
-        super(EphemeralArrayModel, self).__init__(dmm, fe_type)
-        self._data_type = ir.ArrayType(self._pointee_be_type,
-                                       self._fe_type.count)
-
-    def get_data_type(self):
-        return self._data_type
-
-    def as_data(self, builder, value):
-        values = [builder.load(cgutils.gep_inbounds(builder, value, i))
-                  for i in range(self._fe_type.count)]
-        return cgutils.pack_array(builder, values)
-
-    def from_data(self, builder, value):
-        raise NotImplementedError("use load_from_data_pointer() instead")
-
-    def load_from_data_pointer(self, builder, ptr, align=None):
-        return builder.bitcast(ptr, self.get_value_type())
-
-
-@register_default(types.ExternalFunctionPointer)
-class ExternalFuncPointerModel(PrimitiveModel):
-    def __init__(self, dmm, fe_type):
-        sig = fe_type.sig
-        # Since the function is non-Numba, there is no adaptation
-        # of arguments and return value, hence get_value_type().
-        retty = dmm.lookup(sig.return_type).get_value_type()
-        args = [dmm.lookup(t).get_value_type() for t in sig.args]
-        be_type = ir.PointerType(ir.FunctionType(retty, args))
-        super(ExternalFuncPointerModel, self).__init__(dmm, fe_type, be_type)
-
-
-@register_default(types.UniTuple)
-@register_default(types.NamedUniTuple)
-@register_default(types.StarArgUniTuple)
-class UniTupleModel(DataModel):
-    def __init__(self, dmm, fe_type):
-        super(UniTupleModel, self).__init__(dmm, fe_type)
-        self._elem_model = dmm.lookup(fe_type.dtype)
-        self._count = len(fe_type)
-        self._value_type = ir.ArrayType(self._elem_model.get_value_type(),
-                                        self._count)
-        self._data_type = ir.ArrayType(self._elem_model.get_data_type(),
-                                       self._count)
-
-    def get_value_type(self):
-        return self._value_type
-
-    def get_data_type(self):
-        return self._data_type
-
-    def get_return_type(self):
-        return self.get_value_type()
-
-    def get_argument_type(self):
-        return (self._elem_model.get_argument_type(),) * self._count
-
-    def as_argument(self, builder, value):
-        out = []
-        for i in range(self._count):
-            v = builder.extract_value(value, [i])
-            v = self._elem_model.as_argument(builder, v)
-            out.append(v)
-        return out
-
-    def from_argument(self, builder, value):
-        out = ir.Constant(self.get_value_type(), ir.Undefined)
-        for i, v in enumerate(value):
-            v = self._elem_model.from_argument(builder, v)
-            out = builder.insert_value(out, v, [i])
-        return out
-
-    def as_data(self, builder, value):
-        out = ir.Constant(self.get_data_type(), ir.Undefined)
-        for i in range(self._count):
-            val = builder.extract_value(value, [i])
-            dval = self._elem_model.as_data(builder, val)
-            out = builder.insert_value(out, dval, [i])
-        return out
-
-    def from_data(self, builder, value):
-        out = ir.Constant(self.get_value_type(), ir.Undefined)
-        for i in range(self._count):
-            val = builder.extract_value(value, [i])
-            dval = self._elem_model.from_data(builder, val)
-            out = builder.insert_value(out, dval, [i])
-        return out
-
-    def as_return(self, builder, value):
-        return value
-
-    def from_return(self, builder, value):
-        return value
-
-    def traverse(self, builder):
-        def getter(i, value):
-            return builder.extract_value(value, i)
-        return [(self._fe_type.dtype, partial(getter, i))
-                for i in range(self._count)]
-
-    def inner_models(self):
-        return [self._elem_model]
 
 
 class CompositeModel(DataModel):
@@ -733,16 +458,423 @@ class StructModel(CompositeModel):
         return self._models
 
 
-@register_default(types.Complex)
-class ComplexModel(StructModel):
-    _element_type = NotImplemented
+@register_default(types.EnumMember)
+@register_default(types.IntEnumMember)
+class EnumModel(ProxyModel):
+    """
+    Enum members are represented exactly like their values.
+    """
+    def __init__(self, dmm, fe_type):
+        super(EnumModel, self).__init__(dmm, fe_type)
+        self._proxied_model = dmm.lookup(fe_type.dtype)
+
+
+@register_default(types.Opaque)
+@register_default(types.PyObject)
+@register_default(types.RawPointer)
+@register_default(types.NoneType)
+@register_default(types.StringLiteral)
+@register_default(types.EllipsisType)
+@register_default(types.Function)
+@register_default(types.Type)
+@register_default(types.Object)
+@register_default(types.Module)
+@register_default(types.Phantom)
+@register_default(types.UndefVar)
+@register_default(types.ContextManager)
+@register_default(types.Dispatcher)
+@register_default(types.ObjModeDispatcher)
+@register_default(types.ExceptionClass)
+@register_default(types.Dummy)
+@register_default(types.ExceptionInstance)
+@register_default(types.ExternalFunction)
+@register_default(types.EnumClass)
+@register_default(types.IntEnumClass)
+@register_default(types.NumberClass)
+@register_default(types.TypeRef)
+@register_default(types.NamedTupleClass)
+@register_default(types.DType)
+@register_default(types.RecursiveCall)
+@register_default(types.MakeFunctionLiteral)
+@register_default(types.Poison)
+class OpaqueModel(PrimitiveModel):
+    """
+    Passed as opaque pointers
+    """
+    _ptr_type = ir.IntType(8).as_pointer()
 
     def __init__(self, dmm, fe_type):
-        members = [
-            ('real', fe_type.underlying_float),
-            ('imag', fe_type.underlying_float),
-        ]
-        super(ComplexModel, self).__init__(dmm, fe_type, members)
+        be_type = self._ptr_type
+        super(OpaqueModel, self).__init__(dmm, fe_type, be_type)
+
+
+@register_default(types.MemInfoPointer)
+class MemInfoModel(OpaqueModel):
+
+    def inner_models(self):
+        return [self._dmm.lookup(self._fe_type.dtype)]
+
+    def has_nrt_meminfo(self):
+        return True
+
+    def get_nrt_meminfo(self, builder, value):
+        return value
+
+
+class BaseComplexModel(StructModel):
+    pass
+
+if config.USE_LEGACY_TYPE_SYSTEM:
+    @register_default(types.Boolean)
+    @register_default(types.BooleanLiteral)
+    class BooleanModel(DataModel):
+        _bit_type = ir.IntType(1)
+        _byte_type = ir.IntType(8)
+
+        def get_value_type(self):
+            return self._bit_type
+
+        def get_data_type(self):
+            return self._byte_type
+
+        def get_return_type(self):
+            return self.get_data_type()
+
+        def get_argument_type(self):
+            return self.get_data_type()
+
+        def as_data(self, builder, value):
+            return builder.zext(value, self.get_data_type())
+
+        def as_argument(self, builder, value):
+            return self.as_data(builder, value)
+
+        def as_return(self, builder, value):
+            return self.as_data(builder, value)
+
+        def from_data(self, builder, value):
+            ty = self.get_value_type()
+            resalloca = cgutils.alloca_once(builder, ty)
+            cond = builder.icmp_unsigned('==', value, value.type(0))
+            with builder.if_else(cond) as (then, otherwise):
+                with then:
+                    builder.store(ty(0), resalloca)
+                with otherwise:
+                    builder.store(ty(1), resalloca)
+            return builder.load(resalloca)
+
+        def from_argument(self, builder, value):
+            return self.from_data(builder, value)
+
+        def from_return(self, builder, value):
+            return self.from_data(builder, value)
+
+    @register_default(types.Integer)
+    @register_default(types.IntegerLiteral)
+    class IntegerModel(PrimitiveModel):
+        def __init__(self, dmm, fe_type):
+            be_type = ir.IntType(fe_type.bitwidth)
+            super(IntegerModel, self).__init__(dmm, fe_type, be_type)
+
+    @register_default(types.Float)
+    class FloatModel(PrimitiveModel):
+        def __init__(self, dmm, fe_type):
+            if fe_type == types.float32:
+                be_type = ir.FloatType()
+            elif fe_type == types.float64:
+                be_type = ir.DoubleType()
+            else:
+                raise NotImplementedError(fe_type)
+            super(FloatModel, self).__init__(dmm, fe_type, be_type)
+
+    @register_default(types.Complex)
+    class ComplexModel(BaseComplexModel):
+        _element_type = NotImplemented
+
+        def __init__(self, dmm, fe_type):
+            members = [
+                ('real', fe_type.underlying_float),
+                ('imag', fe_type.underlying_float),
+            ]
+            super(ComplexModel, self).__init__(dmm, fe_type, members)
+
+
+else:
+
+    @register_default(types.PythonBoolean)
+    @register_default(types.PythonBooleanLiteral)
+    class PythonBooleanModel(DataModel):
+        _bit_type = ir.IntType(1)
+        _byte_type = ir.IntType(8)
+
+        def get_value_type(self):
+            return self._bit_type
+
+        def get_data_type(self):
+            return self._byte_type
+
+        def get_return_type(self):
+            return self.get_data_type()
+
+        def get_argument_type(self):
+            return self.get_data_type()
+
+        def as_data(self, builder, value):
+            return builder.zext(value, self.get_data_type())
+
+        def as_argument(self, builder, value):
+            return self.as_data(builder, value)
+
+        def as_return(self, builder, value):
+            return self.as_data(builder, value)
+
+        def from_data(self, builder, value):
+            ty = self.get_value_type()
+            resalloca = cgutils.alloca_once(builder, ty)
+            cond = builder.icmp_unsigned('==', value, value.type(0))
+            with builder.if_else(cond) as (then, otherwise):
+                with then:
+                    builder.store(ty(0), resalloca)
+                with otherwise:
+                    builder.store(ty(1), resalloca)
+            return builder.load(resalloca)
+
+        def from_argument(self, builder, value):
+            return self.from_data(builder, value)
+
+        def from_return(self, builder, value):
+            return self.from_data(builder, value)
+
+    @register_default(types.PythonInteger)
+    @register_default(types.PythonIntegerLiteral)
+    class PythonIntegerModel(PrimitiveModel):
+        def __init__(self, dmm, fe_type):
+            be_type = ir.IntType(fe_type.bitwidth)
+            super(PythonIntegerModel, self).__init__(dmm, fe_type, be_type)
+
+    @register_default(types.PythonFloat)
+    class PythonFloatModel(PrimitiveModel):
+        def __init__(self, dmm, fe_type):
+            be_type = ir.DoubleType()
+            super(FloatModel, self).__init__(dmm, fe_type, be_type)
+
+    @register_default(types.PythonComplex)
+    class PythonComplexModel(BaseComplexModel):
+        _element_type = NotImplemented
+
+        def __init__(self, dmm, fe_type):
+            members = [
+                ('real', fe_type.underlying_float),
+                ('imag', fe_type.underlying_float),
+            ]
+            super(PythonComplexModel, self).__init__(dmm, fe_type, members)
+
+
+    @register_default(types.NumPyBoolean)
+    @register_default(types.NumPyBooleanLiteral)
+    class NumPyBooleanModel(DataModel):
+        _bit_type = ir.IntType(1)
+        _byte_type = ir.IntType(8)
+
+        def get_value_type(self):
+            return self._bit_type
+
+        def get_data_type(self):
+            return self._byte_type
+
+        def get_return_type(self):
+            return self.get_data_type()
+
+        def get_argument_type(self):
+            return self.get_data_type()
+
+        def as_data(self, builder, value):
+            return builder.zext(value, self.get_data_type())
+
+        def as_argument(self, builder, value):
+            return self.as_data(builder, value)
+
+        def as_return(self, builder, value):
+            return self.as_data(builder, value)
+
+        def from_data(self, builder, value):
+            ty = self.get_value_type()
+            resalloca = cgutils.alloca_once(builder, ty)
+            cond = builder.icmp_unsigned('==', value, value.type(0))
+            with builder.if_else(cond) as (then, otherwise):
+                with then:
+                    builder.store(ty(0), resalloca)
+                with otherwise:
+                    builder.store(ty(1), resalloca)
+            return builder.load(resalloca)
+
+        def from_argument(self, builder, value):
+            return self.from_data(builder, value)
+
+        def from_return(self, builder, value):
+            return self.from_data(builder, value)
+
+    @register_default(types.NumPyInteger)
+    @register_default(types.NumPyIntegerLiteral)
+    class NumPyIntegerModel(PrimitiveModel):
+        def __init__(self, dmm, fe_type):
+            be_type = ir.IntType(fe_type.bitwidth)
+            super(NumPyIntegerModel, self).__init__(dmm, fe_type, be_type)
+
+    @register_default(types.NumPyFloat)
+    class NumPyFloatModel(PrimitiveModel):
+        def __init__(self, dmm, fe_type):
+            if fe_type == types.float32:
+                be_type = ir.FloatType()
+            elif fe_type == types.float64:
+                be_type = ir.DoubleType()
+            else:
+                raise NotImplementedError(fe_type)
+            super(FloatModel, self).__init__(dmm, fe_type, be_type)
+
+    @register_default(types.NumPyComplex)
+    class NumPyComplexModel(BaseComplexModel):
+        _element_type = NotImplemented
+
+        def __init__(self, dmm, fe_type):
+            members = [
+                ('real', fe_type.underlying_float),
+                ('imag', fe_type.underlying_float),
+            ]
+            super(NumPyComplexModel, self).__init__(dmm, fe_type, members)
+
+
+@register_default(types.CPointer)
+class PointerModel(PrimitiveModel):
+    def __init__(self, dmm, fe_type):
+        self._pointee_model = dmm.lookup(fe_type.dtype)
+        self._pointee_be_type = self._pointee_model.get_data_type()
+        be_type = self._pointee_be_type.as_pointer()
+        super(PointerModel, self).__init__(dmm, fe_type, be_type)
+
+
+@register_default(types.EphemeralPointer)
+class EphemeralPointerModel(PointerModel):
+
+    def get_data_type(self):
+        return self._pointee_be_type
+
+    def as_data(self, builder, value):
+        value = builder.load(value)
+        return self._pointee_model.as_data(builder, value)
+
+    def from_data(self, builder, value):
+        raise NotImplementedError("use load_from_data_pointer() instead")
+
+    def load_from_data_pointer(self, builder, ptr, align=None):
+        return builder.bitcast(ptr, self.get_value_type())
+
+
+@register_default(types.EphemeralArray)
+class EphemeralArrayModel(PointerModel):
+
+    def __init__(self, dmm, fe_type):
+        super(EphemeralArrayModel, self).__init__(dmm, fe_type)
+        self._data_type = ir.ArrayType(self._pointee_be_type,
+                                       self._fe_type.count)
+
+    def get_data_type(self):
+        return self._data_type
+
+    def as_data(self, builder, value):
+        values = [builder.load(cgutils.gep_inbounds(builder, value, i))
+                  for i in range(self._fe_type.count)]
+        return cgutils.pack_array(builder, values)
+
+    def from_data(self, builder, value):
+        raise NotImplementedError("use load_from_data_pointer() instead")
+
+    def load_from_data_pointer(self, builder, ptr, align=None):
+        return builder.bitcast(ptr, self.get_value_type())
+
+
+@register_default(types.ExternalFunctionPointer)
+class ExternalFuncPointerModel(PrimitiveModel):
+    def __init__(self, dmm, fe_type):
+        sig = fe_type.sig
+        # Since the function is non-Numba, there is no adaptation
+        # of arguments and return value, hence get_value_type().
+        retty = dmm.lookup(sig.return_type).get_value_type()
+        args = [dmm.lookup(t).get_value_type() for t in sig.args]
+        be_type = ir.PointerType(ir.FunctionType(retty, args))
+        super(ExternalFuncPointerModel, self).__init__(dmm, fe_type, be_type)
+
+
+@register_default(types.UniTuple)
+@register_default(types.NamedUniTuple)
+@register_default(types.StarArgUniTuple)
+class UniTupleModel(DataModel):
+    def __init__(self, dmm, fe_type):
+        super(UniTupleModel, self).__init__(dmm, fe_type)
+        self._elem_model = dmm.lookup(fe_type.dtype)
+        self._count = len(fe_type)
+        self._value_type = ir.ArrayType(self._elem_model.get_value_type(),
+                                        self._count)
+        self._data_type = ir.ArrayType(self._elem_model.get_data_type(),
+                                       self._count)
+
+    def get_value_type(self):
+        return self._value_type
+
+    def get_data_type(self):
+        return self._data_type
+
+    def get_return_type(self):
+        return self.get_value_type()
+
+    def get_argument_type(self):
+        return (self._elem_model.get_argument_type(),) * self._count
+
+    def as_argument(self, builder, value):
+        out = []
+        for i in range(self._count):
+            v = builder.extract_value(value, [i])
+            v = self._elem_model.as_argument(builder, v)
+            out.append(v)
+        return out
+
+    def from_argument(self, builder, value):
+        out = ir.Constant(self.get_value_type(), ir.Undefined)
+        for i, v in enumerate(value):
+            v = self._elem_model.from_argument(builder, v)
+            out = builder.insert_value(out, v, [i])
+        return out
+
+    def as_data(self, builder, value):
+        out = ir.Constant(self.get_data_type(), ir.Undefined)
+        for i in range(self._count):
+            val = builder.extract_value(value, [i])
+            dval = self._elem_model.as_data(builder, val)
+            out = builder.insert_value(out, dval, [i])
+        return out
+
+    def from_data(self, builder, value):
+        out = ir.Constant(self.get_value_type(), ir.Undefined)
+        for i in range(self._count):
+            val = builder.extract_value(value, [i])
+            dval = self._elem_model.from_data(builder, val)
+            out = builder.insert_value(out, dval, [i])
+        return out
+
+    def as_return(self, builder, value):
+        return value
+
+    def from_return(self, builder, value):
+        return value
+
+    def traverse(self, builder):
+        def getter(i, value):
+            return builder.extract_value(value, i)
+        return [(self._fe_type.dtype, partial(getter, i))
+                for i in range(self._count)]
+
+    def inner_models(self):
+        return [self._elem_model]
 
 
 @register_default(types.LiteralList)

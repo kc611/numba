@@ -46,17 +46,17 @@ PREFIX = "_Z"
 N2CODE = {
     types.void: 'v',
     types.boolean: 'b',
-    types.uint8: 'h',
-    types.int8: 'a',
-    types.uint16: 't',
-    types.int16: 's',
-    types.uint32: 'j',
-    types.int32: 'i',
-    types.uint64: 'y',
-    types.int64: 'x',
-    types.float16: 'Dh',
-    types.float32: 'f',
-    types.float64: 'd'
+    # types.uint8: 'h',
+    # types.int8: 'a',
+    # types.uint16: 't',
+    # types.int16: 's',
+    # types.uint32: 'j',
+    # types.int32: 'i',
+    # types.uint64: 'y',
+    # types.int64: 'x',
+    # types.float16: 'Dh',
+    # types.float32: 'f',
+    # types.float64: 'd'
 }
 
 

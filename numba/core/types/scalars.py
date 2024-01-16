@@ -5,138 +5,159 @@ import numpy as np
 from .abstract import Dummy, Hashable, Literal, Number, Type
 from .utils import parse_integer_bitwidth, parse_integer_signed
 from functools import total_ordering, cached_property
-from numba.core import utils
+from numba.core import utils, config
 from numba.core.typeconv import Conversion
 from numba.np import npdatetime_helpers
 
 
-class Boolean(Hashable):
+class BaseInteger(Number):
+    pass
 
-    def cast_python_value(self, value):
-        return bool(value)
+class BaseIntegerLiteral(Literal, BaseInteger):
+    pass
 
-@total_ordering
-class Integer(Number):
-    def __init__(self, name, bitwidth=None, signed=None):
-        super(Integer, self).__init__(name)
-        if bitwidth is None:
-            bitwidth = parse_integer_bitwidth(name)
-        if signed is None:
-            signed = parse_integer_signed(name)
-        self.bitwidth = bitwidth
-        self.signed = signed
+class BaseBoolean(Hashable):
+    pass
 
-    @classmethod
-    def from_bitwidth(cls, bitwidth, signed=True):
-        name = ('int%d' if signed else 'uint%d') % bitwidth
-        return cls(name)
+class BaseBooleanLiteral(Literal, BaseBoolean):
+    pass
 
-    def cast_python_value(self, value):
-        return getattr(np, self.name)(value)
+class BaseFloat(Number):
+    pass
 
-    def __lt__(self, other):
-        if self.__class__ is not other.__class__:
-            return NotImplemented
-        if self.signed != other.signed:
-            return NotImplemented
-        return self.bitwidth < other.bitwidth
+class BaseFloatLiteral(Number):
+    pass
 
-    @property
-    def maxval(self):
-        """
-        The maximum value representable by this type.
-        """
-        if self.signed:
-            return (1 << (self.bitwidth - 1)) - 1
-        else:
-            return (1 << self.bitwidth) - 1
+class BaseComplex(Number):
+    pass
 
-    @property
-    def minval(self):
-        """
-        The minimal value representable by this type.
-        """
-        if self.signed:
-            return -(1 << (self.bitwidth - 1))
-        else:
-            return 0
+if config.USE_LEGACY_TYPE_SYSTEM:
+    class Boolean(BaseBoolean):
+        def cast_python_value(self, value):
+            return bool(value)
 
+    @total_ordering
+    class Integer(BaseInteger):
+        def __init__(self, name, bitwidth=None, signed=None):
+            super(Integer, self).__init__(name)
+            if bitwidth is None:
+                bitwidth = parse_integer_bitwidth(name)
+            if signed is None:
+                signed = parse_integer_signed(name)
+            self.bitwidth = bitwidth
+            self.signed = signed
 
-class IntegerLiteral(Literal, Integer):
-    def __init__(self, value):
-        self._literal_init(value)
-        name = 'Literal[int]({})'.format(value)
-        basetype = self.literal_type
-        Integer.__init__(
-            self,
-            name=name,
-            bitwidth=basetype.bitwidth,
-            signed=basetype.signed,
-            )
+        @classmethod
+        def from_bitwidth(cls, bitwidth, signed=True):
+            name = ('int%d' if signed else 'uint%d') % bitwidth
+            return cls(name)
 
-    def can_convert_to(self, typingctx, other):
-        conv = typingctx.can_convert(self.literal_type, other)
-        if conv is not None:
-            return max(conv, Conversion.promote)
+        def cast_python_value(self, value):
+            return getattr(np, self.name)(value)
 
+        def __lt__(self, other):
+            if self.__class__ is not other.__class__:
+                return NotImplemented
+            if self.signed != other.signed:
+                return NotImplemented
+            return self.bitwidth < other.bitwidth
 
-Literal.ctor_map[int] = IntegerLiteral
+        @property
+        def maxval(self):
+            """
+            The maximum value representable by this type.
+            """
+            if self.signed:
+                return (1 << (self.bitwidth - 1)) - 1
+            else:
+                return (1 << self.bitwidth) - 1
 
-
-class BooleanLiteral(Literal, Boolean):
-
-    def __init__(self, value):
-        self._literal_init(value)
-        name = 'Literal[bool]({})'.format(value)
-        Boolean.__init__(
-            self,
-            name=name
-            )
-
-    def can_convert_to(self, typingctx, other):
-        conv = typingctx.can_convert(self.literal_type, other)
-        if conv is not None:
-            return max(conv, Conversion.promote)
+        @property
+        def minval(self):
+            """
+            The minimal value representable by this type.
+            """
+            if self.signed:
+                return -(1 << (self.bitwidth - 1))
+            else:
+                return 0
 
 
-Literal.ctor_map[bool] = BooleanLiteral
+    class IntegerLiteral(BaseIntegerLiteral, Integer):
+        def __init__(self, value):
+            self._literal_init(value)
+            name = 'Literal[int]({})'.format(value)
+            basetype = self.literal_type
+            Integer.__init__(
+                self,
+                name=name,
+                bitwidth=basetype.bitwidth,
+                signed=basetype.signed,
+                )
+
+        def can_convert_to(self, typingctx, other):
+            conv = typingctx.can_convert(self.literal_type, other)
+            if conv is not None:
+                return max(conv, Conversion.promote)
 
 
-@total_ordering
-class Float(Number):
-    def __init__(self, *args, **kws):
-        super(Float, self).__init__(*args, **kws)
-        # Determine bitwidth
-        assert self.name.startswith('float')
-        bitwidth = int(self.name[5:])
-        self.bitwidth = bitwidth
-
-    def cast_python_value(self, value):
-        return getattr(np, self.name)(value)
-
-    def __lt__(self, other):
-        if self.__class__ is not other.__class__:
-            return NotImplemented
-        return self.bitwidth < other.bitwidth
+    Literal.ctor_map[int] = IntegerLiteral
 
 
-@total_ordering
-class Complex(Number):
-    def __init__(self, name, underlying_float, **kwargs):
-        super(Complex, self).__init__(name, **kwargs)
-        self.underlying_float = underlying_float
-        # Determine bitwidth
-        assert self.name.startswith('complex')
-        bitwidth = int(self.name[7:])
-        self.bitwidth = bitwidth
+    class BooleanLiteral(BaseBooleanLiteral, Boolean):
 
-    def cast_python_value(self, value):
-        return getattr(np, self.name)(value)
+        def __init__(self, value):
+            self._literal_init(value)
+            name = 'Literal[bool]({})'.format(value)
+            Boolean.__init__(
+                self,
+                name=name
+                )
 
-    def __lt__(self, other):
-        if self.__class__ is not other.__class__:
-            return NotImplemented
-        return self.bitwidth < other.bitwidth
+        def can_convert_to(self, typingctx, other):
+            conv = typingctx.can_convert(self.literal_type, other)
+            if conv is not None:
+                return max(conv, Conversion.promote)
+
+
+    Literal.ctor_map[bool] = BooleanLiteral
+
+
+    @total_ordering
+    class Float(BaseFloat):
+        def __init__(self, *args, **kws):
+            super(Float, self).__init__(*args, **kws)
+            # Determine bitwidth
+            assert self.name.startswith('float')
+            bitwidth = int(self.name[5:])
+            self.bitwidth = bitwidth
+
+        def cast_python_value(self, value):
+            return getattr(np, self.name)(value)
+
+        def __lt__(self, other):
+            if self.__class__ is not other.__class__:
+                return NotImplemented
+            return self.bitwidth < other.bitwidth
+
+
+    @total_ordering
+    class Complex(BaseComplex):
+        def __init__(self, name, underlying_float, **kwargs):
+            super(Complex, self).__init__(name, **kwargs)
+            self.underlying_float = underlying_float
+            # Determine bitwidth
+            assert self.name.startswith('complex')
+            bitwidth = int(self.name[7:])
+            self.bitwidth = bitwidth
+
+        def cast_python_value(self, value):
+            return getattr(np, self.name)(value)
+
+        def __lt__(self, other):
+            if self.__class__ is not other.__class__:
+                return NotImplemented
+            return self.bitwidth < other.bitwidth
 
 
 class _NPDatetimeBase(Type):
