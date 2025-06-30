@@ -46,6 +46,8 @@ typedef enum {
     ERR_CMP_FAILED = -5,
 } SetStatus;
 
+static Py_ssize_t EMPTY_HASH = -9;
+
 /* Object used as dummy key to filled deleted entries */
 static char *_dummy_struct;
 
@@ -78,17 +80,24 @@ set_decref_key(NB_Set *setp, const char *key) {
 
 void
 numba_set_free(NB_Set *setp) {
-
-    for (int i = 0; i < setp->size; i++) {
-        NB_SetEntry entry = setp->table[i];
-        if (entry.key != NULL && entry.key != (char *)dummy) {
-            set_decref_key(setp, entry.key);
-        }
-    }
-
     if(setp->smalltable != setp->table)
         free(setp->table);
     free(setp);
+}
+
+char * alloc_table(Py_ssize_t table_size, Py_ssize_t key_size, Py_ssize_t hash_size){
+    char *table;
+
+    Py_ssize_t entry_size = key_size + hash_size;
+    table = calloc(table_size, entry_size);
+
+    char *entry = table;
+    for (int i=0;i<table_size;i++) {
+        memcpy(entry, (char*)&EMPTY_HASH, hash_size);
+        entry += entry_size;
+    }
+
+    return table;
 }
 
 /* Allocate new set */
@@ -97,16 +106,17 @@ numba_set_new(NB_Set **out, Py_ssize_t key_size, Py_ssize_t size) {
     NB_Set *setp;
 
     setp = malloc(sizeof(NB_Set));
-    memset(setp->smalltable, 0, sizeof(setp->smalltable));
     /* Ensure that the method table is all nulls */
     memset(&setp->methods, 0x00, sizeof(type_based_methods_table));
 
     setp->key_size = key_size;
+    setp->hash_size = sizeof(Py_ssize_t);
+    setp->entry_size = setp->key_size + setp->hash_size;
     setp->filled = 0;
     setp->used = 0;
     setp->size = SET_MINSIZE;
     setp->mask = SET_MINSIZE - 1;
-    setp->table = setp->smalltable;
+    setp->table = setp->smalltable = alloc_table(SET_MINSIZE, setp->key_size, setp->hash_size);
 
     *out = setp;
     return OK;
@@ -124,18 +134,26 @@ void numba_set_dump(NB_Set *setp){
             setp->size, setp->used, setp->filled - setp->used, setp->size-setp->filled);
 
     int i, j;
+    char *entry;
+    char *entry_key;
+    Py_ssize_t entry_hash;
+
     printf("Hashtable entries as follows:\n");
     for(i=0;i<setp->size;i++){
-        if(setp->table[i].key == NULL){
+        entry = setp->table + (i * setp->entry_size);
+        entry_hash = get_entry_hash(entry);
+        entry_key = entry + setp->hash_size;
+
+        if(entry_key == NULL){
             printf("%d - No Entry Found\n", i);
-        }else if(setp->table[i].key == (char *)dummy){
+        }else if(entry_key == (char *)dummy){
             printf("%d - Dummy Entry Found\n", i);
         }else{
             printf("%d - Key Found: ", i);
             for(j=0;j<setp->key_size;j++){
-                printf("%c", *(setp->table[i].key+j));
+                printf("%c", *(entry_key+j));
             }
-            printf(" with hash %ld\n", setp->table[i].hash);
+            printf(" with hash %ld\n", entry_hash);
         }
     }
     printf("Hashtable ends\n\n");
@@ -152,47 +170,56 @@ void numba_set_dump(NB_Set *setp){
 /* This must be >= 1 */
 #define PERTURB_SHIFT 5
 
-static NB_SetEntry *
+static char *
 numba_set_lookkey(NB_Set *setp, char *key, Py_ssize_t hash)
 {
-    NB_SetEntry *table;
-    NB_SetEntry *entry;
+    char *table;
+    char *entry;
     size_t perturb;
     size_t mask = setp->mask;
     size_t i = (size_t)hash & mask; /* Unsigned for defined overflow behavior */
     size_t j;
 
-    entry = &setp->table[i];
-    if (entry->key == NULL)
+    Py_ssize_t entry_hash;
+    char *entry_key;
+
+    entry = setp->table + (i * setp->entry_size);
+    entry_hash = get_entry_hash(entry);
+    entry_key = entry + setp->hash_size;
+
+    if (entry_hash == EMPTY_HASH)
         return entry;
 
     perturb = hash;
 
     while (1) {
-        if (entry->hash == hash) {
+        if (entry_hash == hash) {
             char *startkey = NULL;
-            startkey = entry->key;
+            startkey = entry_key;
             table = setp->table;
             if (key_equal(setp, startkey, key))
                 return entry;
-            if (table != setp->table || entry->key != startkey)
+            if (table != setp->table || entry_key != startkey)
                 return numba_set_lookkey(setp, key, hash);
             mask = setp->mask;
         }
 
         if (i + LINEAR_PROBES <= mask) {
             for (j = 0 ; j < LINEAR_PROBES ; j++) {
-                entry++;
-                if (entry->hash == 0 && entry->key == NULL)
+                entry += setp->entry_size;
+                entry_hash = get_entry_hash(entry);
+                entry_key = entry + setp->hash_size;
+    
+                if (entry_hash == EMPTY_HASH)
                     return entry;
-                if (entry->hash == hash) {
+                if (entry_hash == hash) {
                     char *startkey;
-                    startkey = entry->key;
+                    startkey = entry_key;
                     assert(startkey != dummy);
                     table = setp->table;
                     if (key_equal(setp, startkey, key))
                         return entry;
-                    if (table != setp->table || entry->key != startkey)
+                    if (table != setp->table || entry_key != startkey)
                         return numba_set_lookkey(setp, key, hash);
                     mask = setp->mask;
                 }
@@ -202,28 +229,41 @@ numba_set_lookkey(NB_Set *setp, char *key, Py_ssize_t hash)
         perturb >>= PERTURB_SHIFT;
         i = (i * 5 + 1 + perturb) & mask;
 
-        entry = &setp->table[i];
-        if (entry->key == NULL)
+        entry = setp->table + (i * setp->entry_size);
+        entry_hash = get_entry_hash(entry);
+        entry_key = entry + setp->hash_size;
+        if (entry_hash == EMPTY_HASH)
             return entry;
     }
 }
 
 static void
-numba_set_add_clean(NB_SetEntry *table, size_t mask, char *key, Py_hash_t hash, Py_ssize_t key_size)
+numba_set_add_clean(char *table, size_t mask, char *key, Py_hash_t hash, Py_ssize_t key_size)
 {
-    NB_SetEntry *entry;
+    char *entry;
     size_t perturb = hash;
     size_t i = (size_t)hash & mask;
     size_t j;
+    Py_ssize_t hash_size = sizeof(Py_ssize_t);
+    Py_ssize_t entry_size = hash_size + key_size;
+
+    Py_ssize_t entry_hash;
+    char *entry_key;
 
     while (1) {
-        entry = &table[i];
-        if (entry->key == NULL)
+        entry = table + (i * entry_size);
+        entry_hash = get_entry_hash(entry);
+        entry_key = entry + hash_size;
+
+        if (entry_hash == EMPTY_HASH)
             goto found_null;
         if (i + LINEAR_PROBES <= mask) {
             for (j = 0; j < LINEAR_PROBES; j++) {
-                entry++;
-                if (entry->key == NULL)
+                entry += entry_size;
+                entry_hash = get_entry_hash(entry);
+                entry_key = entry + hash_size;
+
+                if (entry_hash == EMPTY_HASH)
                     goto found_null;
             }
         }
@@ -232,20 +272,20 @@ numba_set_add_clean(NB_SetEntry *table, size_t mask, char *key, Py_hash_t hash, 
     }
 
   found_null:
-    entry->key = malloc(key_size);
-    memset(entry->key, 0, key_size);
-    memcpy(entry->key, key, key_size);
-    entry->hash = hash;
+    memcpy(entry, (char*)&hash, hash_size);
+    memcpy(entry + hash_size, key, key_size);
 }
 
 static int
 numba_set_table_resize(NB_Set *setp, Py_ssize_t minused)
 {
-    NB_SetEntry *oldtable, *newtable, *entry;
+    char *oldtable, *newtable, *entry, *temp_entry, *entry_key;
     Py_ssize_t oldmask = setp->mask;
+    Py_ssize_t entry_hash;
     size_t newmask;
     int is_oldtable_malloced;
-    NB_SetEntry small_copy[SET_MINSIZE];
+
+    char *small_copy = alloc_table(SET_MINSIZE, setp->key_size, setp->hash_size);
 
     assert(minused >= 0);
 
@@ -277,12 +317,12 @@ numba_set_table_resize(NB_Set *setp, Py_ssize_t minused)
                terminate failing searches.  If filled < size, it's
                merely desirable, as dummies slow searches. */
             assert(setp->filled > setp->used);
-            memcpy(small_copy, oldtable, sizeof(small_copy));
+            memcpy(small_copy, oldtable, setp->entry_size * SET_MINSIZE);
             oldtable = small_copy;
         }
     }
     else {
-        newtable = malloc(sizeof(NB_SetEntry) * newsize);
+        newtable = alloc_table(newsize, setp->key_size, setp->hash_size);
         if (newtable == NULL) {
             return -1;
         }
@@ -290,7 +330,6 @@ numba_set_table_resize(NB_Set *setp, Py_ssize_t minused)
 
     /* Make the set empty, using the new table. */
     assert(newtable != oldtable);
-    memset(newtable, 0, sizeof(NB_SetEntry) * newsize);
 
     setp->mask = newsize - 1;
     setp->table = newtable;
@@ -300,16 +339,20 @@ numba_set_table_resize(NB_Set *setp, Py_ssize_t minused)
 
     newmask = (size_t)setp->mask;
     if (setp->filled == setp->used) {
-        for (entry = oldtable; entry <= oldtable + oldmask; entry++) {
-            if (entry->key != NULL) {
-                numba_set_add_clean(newtable, newmask, entry->key, entry->hash, setp->key_size);
+        for (entry = oldtable; entry <= oldtable + (oldmask * setp->entry_size); entry+=setp->entry_size) {
+            entry_hash = get_entry_hash(entry);
+            entry_key = entry + setp->hash_size;
+            if (entry_hash != EMPTY_HASH) {
+                numba_set_add_clean(newtable, newmask, entry_key, entry_hash, setp->key_size);
             }
         }
     } else {
         setp->filled = setp->used;
-        for (entry = oldtable; entry <= oldtable + oldmask; entry++) {
-            if (entry->key != NULL && entry->key != (char *)dummy) {
-                numba_set_add_clean(newtable, newmask, entry->key, entry->hash, setp->key_size);
+        for (entry = oldtable; entry <= oldtable + (oldmask * setp->entry_size); entry+=setp->entry_size) {
+            entry_hash = get_entry_hash(entry);
+            entry_key = entry + setp->hash_size;
+            if (entry_hash != EMPTY_HASH && entry_key != (char *)dummy) {
+                numba_set_add_clean(newtable, newmask, entry_key, entry_hash, setp->key_size);
             }
         }
     }
@@ -326,57 +369,67 @@ numba_set_set_method_table(NB_Set *setp, set_type_based_methods_table *methods)
 }
 
 static int
-numba_set_found_unused(NB_Set *setp, char *key, NB_SetEntry *entry, Py_ssize_t hash, size_t mask){
+numba_set_found_unused(NB_Set *setp, char *key, char *entry, Py_ssize_t hash, size_t mask){
     setp->filled++;
     setp->used++;
 
-    entry->key = malloc(setp->key_size);
-    memset(entry->key, 0, setp->key_size);
-    memcpy(entry->key, key, setp->key_size);
-    set_incref_key(setp, key);
-    entry->hash = hash;
+    memcpy(entry, (char*)&hash, setp->hash_size);
+    memcpy(entry + setp->hash_size, key, setp->key_size);
+
     if ((size_t)setp->filled*5 < mask*3)
         return OK;
     return numba_set_table_resize(setp, setp->used>50000 ? setp->used*2 : setp->used*4);
 }
 
 static int
-numba_set_found_unused_or_dummy(NB_Set *setp, char *key, NB_SetEntry *entry, NB_SetEntry *freeslot, Py_ssize_t hash, size_t mask){
-    if (freeslot == NULL)
+numba_set_found_unused_or_dummy(NB_Set *setp, char *key, char *entry, char *freeslot, Py_ssize_t hash, size_t mask){
+    if (get_entry_hash(freeslot) == 0)
         return numba_set_found_unused(setp, key, entry, hash, mask);
     setp->used++;
-    entry->key = malloc(setp->key_size);
-    memset(entry->key, 0, setp->key_size);
-    memcpy(freeslot->key, key, setp->key_size);
+
+    memcpy(freeslot, (char*)&hash, setp->hash_size);
+    memcpy(freeslot + setp->hash_size, key, setp->key_size);
+
     set_incref_key(setp, key);
-    freeslot->hash = hash;
+
     return OK;
+}
+
+Py_ssize_t get_entry_hash(char *entry) {
+    return ((Py_ssize_t*)entry)[0];
 }
 
 int
 numba_set_add(NB_Set *setp, char *key, Py_ssize_t hash)
 {
-    NB_SetEntry *table;
-    NB_SetEntry *freeslot;
-    NB_SetEntry *entry;
+    char *table;
+    char *freeslot;
+    char *entry;
     size_t perturb;
     size_t mask;
     size_t i;                       /* Unsigned for defined overflow behavior */
     size_t j;
+
+    Py_ssize_t entry_hash;
+    char *entry_key;
+
   restart:
     mask = setp->mask;
     i = (size_t)hash & mask;
 
-    entry = &setp->table[i];
-    if (entry->key == NULL)
+    entry = setp->table + (i * setp->entry_size);
+    entry_hash = get_entry_hash(entry);
+    entry_key = entry + setp->hash_size;
+
+    if (entry_hash == EMPTY_HASH)
         return numba_set_found_unused(setp, key, entry, hash, mask);
 
     freeslot = NULL;
     perturb = hash;
 
     while (1) {
-        if (entry->hash == hash) {
-            char *startkey = entry->key;
+        if (entry_hash == hash) {
+            char *startkey = entry_key;
             /* startkey cannot be a dummy because the dummy hash field is -1 */
             assert(startkey != dummy);
             table = setp->table;
@@ -385,29 +438,32 @@ numba_set_add(NB_Set *setp, char *key, Py_ssize_t hash)
             /* Continuing the search from the current entry only makes
                sense if the table and entry are unchanged; otherwise,
                we have to restart from the beginning */
-            if (table != setp->table || entry->key != startkey)
+            if (table != setp->table || entry_key != startkey)
                 goto restart;
             mask = setp->mask;                 /* help avoid a register spill */
         }
-        else if (entry->hash == -1)
+        else if (entry_hash == -1)
             freeslot = entry;
 
         if (i + LINEAR_PROBES <= mask) {
             for (j = 0 ; j < LINEAR_PROBES ; j++) {
-                entry++;
-                if (entry->hash == 0 && entry->key == NULL)
+                entry += setp->entry_size;
+                entry_hash = get_entry_hash(entry);
+                entry_key = entry + setp->hash_size;
+    
+                if (entry_hash == 0 && entry_key == NULL)
                     return numba_set_found_unused_or_dummy(setp, key, entry, freeslot, hash, mask);
-                if (entry->hash == hash) {
-                    char *startkey = entry->key;
+                if (entry_hash == hash) {
+                    char *startkey = entry_key;
                     assert(startkey != dummy);
                     table = setp->table;
                     if (key_equal(setp, startkey, key))
                         return OK;
-                    if (table != setp->table || entry->key != startkey)
+                    if (table != setp->table || entry_key != startkey)
                         goto restart;
                     mask = setp->mask;
                 }
-                else if (entry->hash == -1)
+                else if (entry_hash == -1)
                     freeslot = entry;
             }
         }
@@ -415,8 +471,10 @@ numba_set_add(NB_Set *setp, char *key, Py_ssize_t hash)
         perturb >>= PERTURB_SHIFT;
         i = (i * 5 + 1 + perturb) & mask;
 
-        entry = &setp->table[i];
-        if (entry->key == NULL)
+        entry = setp->table + (i * setp->entry_size);
+        entry_hash = get_entry_hash(entry);
+        entry_key = entry + setp->hash_size;
+        if (entry_hash == EMPTY_HASH)
             return numba_set_found_unused_or_dummy(setp, key, entry, freeslot, hash, mask);
     }
 }
@@ -425,26 +483,38 @@ numba_set_add(NB_Set *setp, char *key, Py_ssize_t hash)
 int
 numba_set_contains(NB_Set *setp, char *key, Py_ssize_t hash)
 {
-    NB_SetEntry *entry;
+    char *entry;
+    Py_ssize_t entry_hash;
+    char *entry_key;
+
     entry = numba_set_lookkey(setp, key, hash);
-    if (entry != NULL)
-        return entry->key != NULL;          /* Returns 1 only for a valid entry  */
-    return entry != NULL;
+    entry_hash = get_entry_hash(entry);
+    entry_key = entry + setp->hash_size;
+    if (entry_hash != EMPTY_HASH)
+        return entry_key != NULL;          /* Returns 1 only for a valid entry  */
+    return entry_hash;
 }
 
 int
 numba_set_discard(NB_Set *setp, char *key, Py_hash_t hash)
 {
-    NB_SetEntry *entry;
+    char *entry;
+
+    Py_ssize_t entry_hash;
+    char *entry_key;
 
     entry = numba_set_lookkey(setp, key, hash);
+    entry_hash = get_entry_hash(entry);
+    entry_key = entry + setp->hash_size;
+
     if (entry == NULL)
         return ERR_KEY_NOT_FOUND;
-    if (entry->key == NULL)
+    if (entry_key == NULL)
         return ERR_KEY_NOT_FOUND;
-    set_decref_key(setp, entry->key);
-    entry->key = (char *)dummy;
-    entry->hash = -1;
+
+    memcpy(entry, (char*)&EMPTY_HASH, setp->hash_size);
+    memcpy(entry + setp->hash_size, (char *)dummy, sizeof(dummy));
+
     setp->used--;
     return OK;
 }
@@ -462,22 +532,28 @@ numba_set_iter(NB_SetIter *it, NB_Set *setp) {
     it->table_size = setp->size;
     it->num_keys = setp->used;
     it->pos = 0;
+    it->hash_size = setp->hash_size;
+    it->key_size = setp->key_size;
+    it->entry_size = setp->entry_size;
 }
 
 
 int
 numba_set_iter_next(NB_SetIter *it, const char **set_ptr) {
     /* Detect set mutation during iteration */
-    NB_SetEntry *entry_table_ptr;
+    char *entry_table_ptr;
     if (it->parent->table != it->table ||
         it->parent->used != it->num_keys) {
         return ERR_SET_MUTATED;
     }
     entry_table_ptr = it->table;
     while ( it->pos < it->table_size ) {
-        NB_SetEntry *entry = (entry_table_ptr + it->pos++);
-        if ( entry->hash != -1 && entry->key != NULL && entry->key != (char *)dummy) {
-            *set_ptr = entry->key;
+        char *entry = (entry_table_ptr + (it->pos++) * it->entry_size);
+        Py_ssize_t entry_hash = get_entry_hash(entry);;
+        char *entry_key = entry + it->hash_size;
+
+        if ( entry_hash != EMPTY_HASH && entry_key != NULL && entry_key != (char *)dummy) {
+            *set_ptr = entry_key;
             return OK;
         }
     }
@@ -496,16 +572,23 @@ numba_set_iter_next(NB_SetIter *it, const char **set_ptr) {
 void _verify_slots(NB_Set *setp, int size, int active_slots, int dummy_slots){
     // Check total size is as expected
     CHECK (setp->size == size);
+    Py_ssize_t entry_hash;
+    char *entry_key;
 
     int _active_slots = 0, _dummy_slots = 0;
-    for(int i=0;i<size;i++){
-        if(setp->table[i].key != NULL){
-            if(setp->table[i].key == (char *)dummy){
+    char *entry = setp->table;
+
+    for(int i=0;i<size;i++){          
+        entry_hash = get_entry_hash(entry);
+        entry_key = entry + setp->hash_size;
+        if(entry_key != NULL){
+            if(entry_key == (char *)dummy){
                 _dummy_slots++;
             }else{
                 _active_slots++;
             }
         }
+        entry += setp->entry_size;
     }
 
     CHECK (active_slots == _active_slots);
@@ -517,7 +600,7 @@ void _verify_slots(NB_Set *setp, int size, int active_slots, int dummy_slots){
 int
 numba_test_set(void) {
     NB_Set *setp = NULL;
-    NB_SetEntry *set_entry;
+    char *set_entry;
     NB_SetIter iter;
     Py_ssize_t it_count;
     const char *it_val;
@@ -530,7 +613,7 @@ numba_test_set(void) {
     // TODO: Check if initialized correctly
 
     set_entry = numba_set_lookkey(setp, "befz", 0xbeef);
-    CHECK (set_entry->key == NULL);
+    CHECK (set_entry + setp->hash_size == NULL);
 
     // insert 1st key
     status = numba_set_add(setp, "befz", 0xbeef);

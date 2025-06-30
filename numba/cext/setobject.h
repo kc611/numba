@@ -31,17 +31,12 @@ typedef struct {
 } set_type_based_methods_table;
 
 typedef struct {
-    /* Uses Py_ssize_t instead of Py_hash_t to guarantee word size alignment */
-    Py_ssize_t  hash;
-    char        *key;
-
-} NB_SetEntry;
-
-typedef struct {
     Py_ssize_t size;            /* Size of the active hash table*/
     Py_ssize_t filled;          /* Number active and dummy entries*/
     Py_ssize_t used;            /* Number active entries */
 
+    Py_ssize_t entry_size;        /* entry_size is the sizeof one single entry */
+    Py_ssize_t hash_size;        /* key_size is the sizeof hash type */
     Py_ssize_t key_size;        /* key_size is the sizeof key type */
 
     /* The table contains mask + 1 slots, and that's a power of 2.
@@ -57,10 +52,10 @@ typedef struct {
      * The table pointer is never NULL which saves us from repeated
      * runtime null-tests.
      */
-    NB_SetEntry *table;
+    char *table;
 
     /* Placeholder for table resizing, initally same as table */
-    NB_SetEntry smalltable[SET_MINSIZE];
+    char *smalltable;
 } NB_Set;
 
 /***** Set iterator type ***********************************************/
@@ -69,15 +64,20 @@ typedef struct {
     /* parent set */
     NB_Set        *parent;
     /* parent set entry object */
-    NB_SetEntry     *table;
+    char     *table;
     /* number of keys in the set being iterated */
     Py_ssize_t       num_keys;
     /* hash table size */
     Py_ssize_t       table_size;
     /* iterator position; indicates the next position to read */
     Py_ssize_t       pos;
+
+    Py_ssize_t entry_size;        /* entry_size is the sizeof one single entry */
+    Py_ssize_t hash_size;        /* key_size is the sizeof hash type */
+    Py_ssize_t key_size;        /* key_size is the sizeof key type */
 } NB_SetIter;
 
+Py_ssize_t get_entry_hash(char *entry);
 
 NUMBA_EXPORT_FUNC(int)          /* A test function for sets */
 numba_test_set(void);           /* Returns 0 for OK; 1 for failure. */
