@@ -492,7 +492,7 @@ numba_set_contains(NB_Set *setp, char *key, Py_ssize_t hash)
     entry_key = entry + setp->hash_size;
     if (entry_hash != EMPTY_HASH)
         return entry_key != NULL;          /* Returns 1 only for a valid entry  */
-    return entry_hash;
+    return entry_hash != EMPTY_HASH;
 }
 
 int
@@ -613,7 +613,7 @@ numba_test_set(void) {
     // TODO: Check if initialized correctly
 
     set_entry = numba_set_lookkey(setp, "befz", 0xbeef);
-    CHECK (set_entry + setp->hash_size == NULL);
+    CHECK (get_entry_hash(set_entry) == EMPTY_HASH);
 
     // insert 1st key
     status = numba_set_add(setp, "befz", 0xbeef);
