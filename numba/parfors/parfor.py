@@ -40,7 +40,6 @@ from numba.core.extending import register_jitable, lower_builtin
 from numba.core.ir_utils import (
     mk_unique_var,
     next_label,
-    mk_alloc,
     get_np_ufunc_typ,
     mk_range_block,
     mk_loop_header,
@@ -91,6 +90,8 @@ from numba.core.types.functions import Function
 from numba.parfors.array_analysis import (random_int_args, random_1arg_size,
                                   random_2arg_sizelast, random_3arg_sizelast,
                                   random_calls, assert_equiv)
+from numba.parfors.ir_utils import mk_alloc
+from numba.np import types as npy_types
 from numba.core.extending import overload
 import copy
 import numpy
@@ -161,6 +162,85 @@ def min_parallel_impl(return_type, arg):
             return val
     return min_1
 
+# -----------------------------------------------------------------------------
+
+def get_type_max_value(typ):
+    if isinstance(typ, types.Float):
+        return np.inf
+    if isinstance(typ, types.Integer):
+        return typ.maxval
+    raise NotImplementedError("Unsupported type")
+
+def get_type_min_value(typ):
+    if isinstance(typ, types.Float):
+        return -np.inf
+    if isinstance(typ, types.Integer):
+        return typ.minval
+    raise NotImplementedError("Unsupported type")
+
+@infer_global(get_type_min_value)
+@infer_global(get_type_max_value)
+class MinValInfer(AbstractTemplate):
+    def generic(self, args, kws):
+        assert not kws
+        assert len(args) == 1
+        if isinstance(args[0], (types.DType, types.NumberClass)):
+            return signature(args[0].dtype, *args)
+
+@lower_builtin(get_type_min_value, types.NumberClass)
+@lower_builtin(get_type_min_value, types.DType)
+def lower_get_type_min_value(context, builder, sig, args):
+    typ = sig.args[0].dtype
+
+    if isinstance(typ, types.Integer):
+        bw = typ.bitwidth
+        lty = ir.IntType(bw)
+        val = typ.minval
+        res = ir.Constant(lty, val)
+    elif isinstance(typ, types.Float):
+        bw = typ.bitwidth
+        if bw == 32:
+            lty = ir.FloatType()
+        elif bw == 64:
+            lty = ir.DoubleType()
+        else:
+            raise NotImplementedError("llvmlite only supports 32 and 64 bit floats")
+        npty = getattr(np, 'float{}'.format(bw))
+        res = ir.Constant(lty, -np.inf)
+    elif isinstance(typ, (types.NPDatetime, types.NPTimedelta)):
+        bw = 64
+        lty = ir.IntType(bw)
+        val = types.int64.minval + 1 # minval is NaT, so minval + 1 is the smallest value
+        res = ir.Constant(lty, val)
+    return impl_ret_untracked(context, builder, lty, res)
+
+@lower_builtin(get_type_max_value, types.NumberClass)
+@lower_builtin(get_type_max_value, types.DType)
+def lower_get_type_max_value(context, builder, sig, args):
+    typ = sig.args[0].dtype
+
+    if isinstance(typ, types.Integer):
+        bw = typ.bitwidth
+        lty = ir.IntType(bw)
+        val = typ.maxval
+        res = ir.Constant(lty, val)
+    elif isinstance(typ, types.Float):
+        bw = typ.bitwidth
+        if bw == 32:
+            lty = ir.FloatType()
+        elif bw == 64:
+            lty = ir.DoubleType()
+        else:
+            raise NotImplementedError("llvmlite only supports 32 and 64 bit floats")
+        npty = getattr(np, 'float{}'.format(bw))
+        res = ir.Constant(lty, np.inf)
+    elif isinstance(typ, (npy_types.NPDatetime, npy_types.NPTimedelta)):
+        bw = 64
+        lty = ir.IntType(bw)
+        val = types.int64.maxval
+        res = ir.Constant(lty, val)
+    return impl_ret_untracked(context, builder, lty, res)
+
 def max_parallel_impl(return_type, arg):
     if arg.ndim == 0:
         def max_1(in_arr):
@@ -171,7 +251,7 @@ def max_parallel_impl(return_type, arg):
             def max_1(in_arr):
                 numba.parfors.parfor.init_prange()
                 max_checker(len(in_arr))
-                val = numba.cpython.builtins.get_type_min_value(in_arr.dtype)
+                val = get_type_min_value(in_arr.dtype)
                 for i in numba.parfors.parfor.internal_prange(len(in_arr)):
                     val = datetime_maximum(val, in_arr[i])
                 return val
@@ -179,7 +259,7 @@ def max_parallel_impl(return_type, arg):
             def max_1(in_arr):
                 numba.parfors.parfor.init_prange()
                 max_checker(len(in_arr))
-                val = numba.cpython.builtins.get_type_min_value(in_arr.dtype)
+                val = get_type_min_value(in_arr.dtype)
                 for i in numba.parfors.parfor.internal_prange(len(in_arr)):
                     val = max(val, in_arr[i])
                 return val

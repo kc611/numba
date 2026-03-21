@@ -492,85 +492,6 @@ def bool_none(x):
 
 # -----------------------------------------------------------------------------
 
-def get_type_max_value(typ):
-    if isinstance(typ, types.Float):
-        return np.inf
-    if isinstance(typ, types.Integer):
-        return typ.maxval
-    raise NotImplementedError("Unsupported type")
-
-def get_type_min_value(typ):
-    if isinstance(typ, types.Float):
-        return -np.inf
-    if isinstance(typ, types.Integer):
-        return typ.minval
-    raise NotImplementedError("Unsupported type")
-
-@infer_global(get_type_min_value)
-@infer_global(get_type_max_value)
-class MinValInfer(AbstractTemplate):
-    def generic(self, args, kws):
-        assert not kws
-        assert len(args) == 1
-        if isinstance(args[0], (types.DType, types.NumberClass)):
-            return signature(args[0].dtype, *args)
-
-@lower_builtin(get_type_min_value, types.NumberClass)
-@lower_builtin(get_type_min_value, types.DType)
-def lower_get_type_min_value(context, builder, sig, args):
-    typ = sig.args[0].dtype
-
-    if isinstance(typ, types.Integer):
-        bw = typ.bitwidth
-        lty = ir.IntType(bw)
-        val = typ.minval
-        res = ir.Constant(lty, val)
-    elif isinstance(typ, types.Float):
-        bw = typ.bitwidth
-        if bw == 32:
-            lty = ir.FloatType()
-        elif bw == 64:
-            lty = ir.DoubleType()
-        else:
-            raise NotImplementedError("llvmlite only supports 32 and 64 bit floats")
-        npty = getattr(np, 'float{}'.format(bw))
-        res = ir.Constant(lty, -np.inf)
-    elif isinstance(typ, (types.NPDatetime, types.NPTimedelta)):
-        bw = 64
-        lty = ir.IntType(bw)
-        val = types.int64.minval + 1 # minval is NaT, so minval + 1 is the smallest value
-        res = ir.Constant(lty, val)
-    return impl_ret_untracked(context, builder, lty, res)
-
-@lower_builtin(get_type_max_value, types.NumberClass)
-@lower_builtin(get_type_max_value, types.DType)
-def lower_get_type_max_value(context, builder, sig, args):
-    typ = sig.args[0].dtype
-
-    if isinstance(typ, types.Integer):
-        bw = typ.bitwidth
-        lty = ir.IntType(bw)
-        val = typ.maxval
-        res = ir.Constant(lty, val)
-    elif isinstance(typ, types.Float):
-        bw = typ.bitwidth
-        if bw == 32:
-            lty = ir.FloatType()
-        elif bw == 64:
-            lty = ir.DoubleType()
-        else:
-            raise NotImplementedError("llvmlite only supports 32 and 64 bit floats")
-        npty = getattr(np, 'float{}'.format(bw))
-        res = ir.Constant(lty, np.inf)
-    elif isinstance(typ, (types.NPDatetime, types.NPTimedelta)):
-        bw = 64
-        lty = ir.IntType(bw)
-        val = types.int64.maxval
-        res = ir.Constant(lty, val)
-    return impl_ret_untracked(context, builder, lty, res)
-
-# -----------------------------------------------------------------------------
-
 from numba.core.typing.builtins import IndexValue, IndexValueType
 from numba.extending import overload, register_jitable
 
@@ -810,7 +731,7 @@ def ol_isinstance(var, typs):
                         types.Function, types.ClassType, types.UnicodeType,
                         types.ClassInstanceType, types.NoneType, types.Array,
                         types.Boolean, types.Float, types.UnicodeCharSeq,
-                        types.Complex, types.NPDatetime, types.NPTimedelta,)
+                        types.Complex,)
     if not isinstance(var_ty, supported_var_ty):
         msg = f'isinstance() does not support variables of type "{var_ty}".'
         raise NumbaTypeError(msg)
@@ -865,9 +786,6 @@ def ol_isinstance(var, typs):
             numba_typ = as_numba_type(key)
             if var_ty == numba_typ:
                 return true_impl
-            elif isinstance(numba_typ, (types.NPDatetime, types.NPTimedelta)):
-                if isinstance(var_ty, type(numba_typ)):
-                    return true_impl
             elif isinstance(numba_typ, types.ClassType) and \
                     isinstance(var_ty, types.ClassInstanceType) and \
                     var_ty.key == numba_typ.instance_type.key:

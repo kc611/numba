@@ -6,7 +6,6 @@ import numpy as np
 
 from numba.core import errors, types
 from numba.core.typing.templates import signature
-from numba.np import npdatetime_helpers
 from numba.core.errors import TypingError
 
 # re-export
@@ -115,19 +114,20 @@ def from_dtype(dtype):
     raise errors.NumbaNotImplementedError(dtype)
 
 
-_as_dtype_letters = {
-    types.NPDatetime: 'M8',
-    types.NPTimedelta: 'm8',
-    types.CharSeq: 'S',
-    types.UnicodeCharSeq: 'U',
-}
-
-
 def as_dtype(nbtype):
     """
     Return a numpy dtype instance corresponding to the given Numba type.
     NumbaNotImplementedError is if no correspondence is known.
     """
+    from numba.np import types as np_types
+
+    _as_dtype_letters = {
+        np_types.NPDatetime: 'M8',
+        np_types.NPTimedelta: 'm8',
+        types.CharSeq: 'S',
+        types.UnicodeCharSeq: 'U',
+    }
+
     nbtype = types.unliteral(nbtype)
     if isinstance(nbtype, (types.Complex, types.Integer, types.Float)):
         return np.dtype(str(nbtype))
@@ -365,6 +365,7 @@ def ufunc_find_matching_loop(ufunc, arg_types):
     return value - A UFuncLoopSpec identifying the loop, or None
                    if no matching loop is found.
     """
+    from numba.np import npdatetime_helpers
 
     # Separate logical input from explicit output arguments
     input_types = arg_types[:ufunc.nin]

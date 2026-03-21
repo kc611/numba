@@ -759,23 +759,6 @@ class NumberAttribute(AttributeTemplate):
         if not args:
             return signature(ty)
 
-
-@infer_getattr
-class NPTimedeltaAttribute(AttributeTemplate):
-    key = types.NPTimedelta
-
-    def resolve___class__(self, ty):
-        return types.NumberClass(ty)
-
-
-@infer_getattr
-class NPDatetimeAttribute(AttributeTemplate):
-    key = types.NPDatetime
-
-    def resolve___class__(self, ty):
-        return types.NumberClass(ty)
-
-
 @infer_getattr
 class SliceAttribute(AttributeTemplate):
     key = types.SliceType
@@ -827,15 +810,15 @@ class NumberClassAttribute(AttributeTemplate):
             elif isinstance(val, (types.Number, types.Boolean, types.IntEnumMember)):
                  # Scalar constructor, e.g. np.int32(42)
                  return ty
-            elif isinstance(val, (types.NPDatetime, types.NPTimedelta)):
-                # Constructor cast from datetime-like, e.g.
-                # > np.int64(np.datetime64("2000-01-01"))
-                if ty.bitwidth == 64:
-                    return ty
-                else:
-                    msg = (f"Cannot cast {val} to {ty} as {ty} is not 64 bits "
-                           "wide.")
-                    raise errors.TypingError(msg)
+            # elif isinstance(val, (types.NPDatetime, types.NPTimedelta)):
+            #     # Constructor cast from datetime-like, e.g.
+            #     # > np.int64(np.datetime64("2000-01-01"))
+            #     if ty.bitwidth == 64:
+            #         return ty
+            #     else:
+            #         msg = (f"Cannot cast {val} to {ty} as {ty} is not 64 bits "
+            #                "wide.")
+            #         raise errors.TypingError(msg)
             else:
                 if (isinstance(val, types.Array) and val.ndim == 0 and
                     val.dtype == ty):
@@ -898,7 +881,9 @@ class MinMaxBase(AbstractTemplate):
 
     def _unify_minmax(self, tys):
         for ty in tys:
-            if not isinstance(ty, (types.Number, types.NPDatetime, types.NPTimedelta)):
+            if not isinstance(ty, (types.Number, 
+                                #    types.NPDatetime, types.NPTimedelta
+                                   )):
                 return
         return self.context.unify_types(*tys)
 
@@ -977,11 +962,11 @@ class Int(AbstractTemplate):
             return signature(arg, arg)
         if isinstance(arg, (types.Float, types.Boolean)):
             return signature(types.intp, arg)
-        if isinstance(arg, types.NPDatetime):
-            if arg.unit == 'ns':
-                return signature(types.int64, arg)
-            else:
-                raise errors.NumbaTypeError(f"Only datetime64[ns] can be converted, but got datetime64[{arg.unit}]")
+        # if isinstance(arg, types.NPDatetime):
+        #     if arg.unit == 'ns':
+        #         return signature(types.int64, arg)
+        #     else:
+        #         raise errors.NumbaTypeError(f"Only datetime64[ns] can be converted, but got datetime64[{arg.unit}]")
         if isinstance(arg, types.NPTimedelta):
             return signature(types.int64, arg)
 
