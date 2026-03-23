@@ -10,6 +10,7 @@ from numba.core.errors import TypingError
 
 # re-export
 from numba.core.cgutils import is_nonelike   # noqa: F401
+from numba.np import types as npy_types
 
 
 numpy_version = tuple(map(int, np.__version__.split('.')[:2]))
@@ -76,9 +77,9 @@ def _from_datetime_dtype(dtype):
     typecode = groups[0]
     unit = groups[2] or ''
     if typecode == 'm':
-        return types.NPTimedelta(unit)
+        return npy_types.NPTimedelta(unit)
     elif typecode == 'M':
-        return types.NPDatetime(unit)
+        return npy_types.NPDatetime(unit)
     else:
         raise errors.NumbaNotImplementedError(dtype)
 
@@ -133,7 +134,7 @@ def as_dtype(nbtype):
         return np.dtype(str(nbtype))
     if isinstance(nbtype, (types.Boolean)):
         return np.dtype('?')
-    if isinstance(nbtype, (types.NPDatetime, types.NPTimedelta)):
+    if isinstance(nbtype, (npy_types.NPDatetime, npy_types.NPTimedelta)):
         letter = _as_dtype_letters[type(nbtype)]
         if nbtype.unit:
             return np.dtype('%s[%s]' % (letter, nbtype.unit))
@@ -428,8 +429,8 @@ def ufunc_find_matching_loop(ufunc, arg_types):
         def make_specific(outputs, unit):
             new_outputs = []
             for out in outputs:
-                if isinstance(out, types.NPTimedelta) and out.unit == "":
-                    new_outputs.append(types.NPTimedelta(unit))
+                if isinstance(out, npy_types.NPTimedelta) and out.unit == "":
+                    new_outputs.append(npy_types.NPTimedelta(unit))
                 else:
                     new_outputs.append(out)
             return new_outputs
@@ -437,7 +438,7 @@ def ufunc_find_matching_loop(ufunc, arg_types):
         def make_datetime_specific(outputs, dt_unit, td_unit):
             new_outputs = []
             for out in outputs:
-                if isinstance(out, types.NPDatetime) and out.unit == "":
+                if isinstance(out, npy_types.NPDatetime) and out.unit == "":
                     unit = npdatetime_helpers.combine_datetime_timedelta_units(
                         dt_unit, td_unit)
                     if unit is None:
@@ -446,7 +447,7 @@ def ufunc_find_matching_loop(ufunc, arg_types):
                                           f"datetime64[{dt_unit}] " +
                                           f"and timedelta64[{td_unit}]"
                                           )
-                    new_outputs.append(types.NPDatetime(unit))
+                    new_outputs.append(npy_types.NPDatetime(unit))
                 else:
                     new_outputs.append(out)
             return new_outputs
@@ -724,7 +725,7 @@ def type_is_scalar(typ):
     """
 
     ok = (types.Boolean, types.Number, types.UnicodeType, types.StringLiteral,
-          types.NPTimedelta, types.NPDatetime)
+          npy_types.NPTimedelta, npy_types.NPDatetime)
     return isinstance(typ, ok)
 
 

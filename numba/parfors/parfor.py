@@ -99,6 +99,7 @@ import numpy as np
 from numba.parfors import array_analysis
 import numba.cpython.builtins
 from numba.stencils import stencilparfor
+from numba.np import types as npy_types
 # circular dependency: import numba.npyufunc.dufunc.DUFunc
 
 # wrapped pretty print
@@ -135,7 +136,7 @@ def min_parallel_impl(return_type, arg):
         def min_1(in_arr):
             return in_arr[()]
     elif arg.ndim == 1:
-        if isinstance(arg.dtype, (types.NPDatetime, types.NPTimedelta)):
+        if isinstance(arg.dtype, (npy_types.NPDatetime, npy_types.NPTimedelta)):
             # NaT is always returned if it is in the array
             def min_1(in_arr):
                 numba.parfors.parfor.init_prange()
@@ -207,7 +208,7 @@ def lower_get_type_min_value(context, builder, sig, args):
             raise NotImplementedError("llvmlite only supports 32 and 64 bit floats")
         npty = getattr(np, 'float{}'.format(bw))
         res = ir.Constant(lty, -np.inf)
-    elif isinstance(typ, (types.NPDatetime, types.NPTimedelta)):
+    elif isinstance(typ, (npy_types.NPDatetime, npy_types.NPTimedelta)):
         bw = 64
         lty = ir.IntType(bw)
         val = types.int64.minval + 1 # minval is NaT, so minval + 1 is the smallest value
@@ -246,7 +247,7 @@ def max_parallel_impl(return_type, arg):
         def max_1(in_arr):
             return in_arr[()]
     elif arg.ndim == 1:
-        if isinstance(arg.dtype, (types.NPDatetime, types.NPTimedelta)):
+        if isinstance(arg.dtype, (npy_types.NPDatetime, npy_types.NPTimedelta)):
             # NaT is always returned if it is in the array
             def max_1(in_arr):
                 numba.parfors.parfor.init_prange()
