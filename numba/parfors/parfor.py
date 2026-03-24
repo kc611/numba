@@ -141,7 +141,7 @@ def min_parallel_impl(return_type, arg):
             def min_1(in_arr):
                 numba.parfors.parfor.init_prange()
                 min_checker(len(in_arr))
-                val = numba.cpython.builtins.get_type_max_value(in_arr.dtype)
+                val = get_type_max_value(in_arr.dtype)
                 for i in numba.parfors.parfor.internal_prange(len(in_arr)):
                     val = datetime_minimum(val, in_arr[i])
                 return val
@@ -149,7 +149,7 @@ def min_parallel_impl(return_type, arg):
             def min_1(in_arr):
                 numba.parfors.parfor.init_prange()
                 min_checker(len(in_arr))
-                val = numba.cpython.builtins.get_type_max_value(in_arr.dtype)
+                val = get_type_max_value(in_arr.dtype)
                 for i in numba.parfors.parfor.internal_prange(len(in_arr)):
                     val = min(val, in_arr[i])
                 return val
@@ -157,7 +157,7 @@ def min_parallel_impl(return_type, arg):
         def min_1(in_arr):
             numba.parfors.parfor.init_prange()
             min_checker(len(in_arr))
-            val = numba.cpython.builtins.get_type_max_value(in_arr.dtype)
+            val = get_type_max_value(in_arr.dtype)
             for i in numba.pndindex(in_arr.shape):
                 val = min(val, in_arr[i])
             return val
@@ -195,24 +195,24 @@ def lower_get_type_min_value(context, builder, sig, args):
 
     if isinstance(typ, types.Integer):
         bw = typ.bitwidth
-        lty = ir.IntType(bw)
+        lty = lir.IntType(bw)
         val = typ.minval
-        res = ir.Constant(lty, val)
+        res = lir.Constant(lty, val)
     elif isinstance(typ, types.Float):
         bw = typ.bitwidth
         if bw == 32:
-            lty = ir.FloatType()
+            lty = lir.FloatType()
         elif bw == 64:
-            lty = ir.DoubleType()
+            lty = lir.DoubleType()
         else:
             raise NotImplementedError("llvmlite only supports 32 and 64 bit floats")
         npty = getattr(np, 'float{}'.format(bw))
-        res = ir.Constant(lty, -np.inf)
+        res = lir.Constant(lty, -np.inf)
     elif isinstance(typ, (npy_types.NPDatetime, npy_types.NPTimedelta)):
         bw = 64
-        lty = ir.IntType(bw)
+        lty = lir.IntType(bw)
         val = types.int64.minval + 1 # minval is NaT, so minval + 1 is the smallest value
-        res = ir.Constant(lty, val)
+        res = lir.Constant(lty, val)
     return impl_ret_untracked(context, builder, lty, res)
 
 @lower_builtin(get_type_max_value, types.NumberClass)
@@ -222,24 +222,24 @@ def lower_get_type_max_value(context, builder, sig, args):
 
     if isinstance(typ, types.Integer):
         bw = typ.bitwidth
-        lty = ir.IntType(bw)
+        lty = lir.IntType(bw)
         val = typ.maxval
-        res = ir.Constant(lty, val)
+        res = lir.Constant(lty, val)
     elif isinstance(typ, types.Float):
         bw = typ.bitwidth
         if bw == 32:
-            lty = ir.FloatType()
+            lty = lir.FloatType()
         elif bw == 64:
-            lty = ir.DoubleType()
+            lty = lir.DoubleType()
         else:
             raise NotImplementedError("llvmlite only supports 32 and 64 bit floats")
         npty = getattr(np, 'float{}'.format(bw))
-        res = ir.Constant(lty, np.inf)
+        res = lir.Constant(lty, np.inf)
     elif isinstance(typ, (npy_types.NPDatetime, npy_types.NPTimedelta)):
         bw = 64
-        lty = ir.IntType(bw)
+        lty = lir.IntType(bw)
         val = types.int64.maxval
-        res = ir.Constant(lty, val)
+        res = lir.Constant(lty, val)
     return impl_ret_untracked(context, builder, lty, res)
 
 def max_parallel_impl(return_type, arg):
@@ -278,7 +278,7 @@ def argmin_parallel_impl(in_arr):
     numba.parfors.parfor.init_prange()
     argmin_checker(len(in_arr))
     A = in_arr.ravel()
-    init_val = numba.cpython.builtins.get_type_max_value(A.dtype)
+    init_val = get_type_max_value(A.dtype)
     ival = typing.builtins.IndexValue(0, init_val)
     for i in numba.parfors.parfor.internal_prange(len(A)):
         curr_ival = typing.builtins.IndexValue(i, A[i])

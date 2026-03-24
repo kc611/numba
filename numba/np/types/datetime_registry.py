@@ -1,9 +1,10 @@
 from numba.core.pythonapi import box, unbox, NativeValue
-from numba.core.extending import overload
+from numba.core.extending import (overload, intrinsic)
 from numba.np.types import NPDatetime, NPTimedelta
 from numba import types
 from numba.core.typing.asnumbatype import as_numba_type
 from numba.core.errors import NumbaTypeError
+from numba.cpython.builtins import cast_int
 
 @box(NPDatetime)
 def box_npdatetime(typ, val, c):
@@ -96,3 +97,15 @@ def ol_isinstance(var, typs):
                     return true_impl
 
     return false_impl
+
+@overload(int)
+def ol_int(x):
+    if isinstance(x, (NPDatetime, NPTimedelta)):
+        if isinstance(x, NPDatetime):
+            if x.unit != 'ns':
+                raise NumbaTypeError(f"Only datetime64[ns] can be converted, but got datetime64[{x.unit}]")
+
+        def impl(x):
+            return cast_int(x)
+
+        return impl
