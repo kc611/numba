@@ -876,52 +876,6 @@ class TypeRefAttribute(AttributeTemplate):
 
 #------------------------------------------------------------------------------
 
-
-class MinMaxBase(AbstractTemplate):
-
-    def _unify_minmax(self, tys):
-        for ty in tys:
-            if not isinstance(ty, (types.Number, 
-                                #    types.NPDatetime, types.NPTimedelta
-                                   )):
-                return
-        return self.context.unify_types(*tys)
-
-    def generic(self, args, kws):
-        """
-        Resolve a min() or max() call.
-        """
-        assert not kws
-
-        if not args:
-            return
-        if len(args) == 1:
-            # max(arg) only supported if arg is an iterable
-            if isinstance(args[0], types.BaseTuple):
-                tys = list(args[0])
-                if not tys:
-                    raise errors.TypingError("%s() argument is an empty tuple"
-                                             % (self.key.__name__,))
-            else:
-                return
-        else:
-            # max(*args)
-            tys = args
-        retty = self._unify_minmax(tys)
-        if retty is not None:
-            return signature(retty, *args)
-
-
-@infer_global(max)
-class Max(MinMaxBase):
-    pass
-
-
-@infer_global(min)
-class Min(MinMaxBase):
-    pass
-
-
 @infer_global(round)
 class Round(ConcreteTemplate):
     cases = [
