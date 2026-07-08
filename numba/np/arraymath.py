@@ -410,7 +410,7 @@ def get_mask(context, builder, mask_length, axis):
 
 
 @intrinsic
-def _numpy_sum(typingctx, aryty, axisty):
+def _numpy_sum(typingctx, aryty):
     ret_dtype = aryty.dtype
 
     if isinstance(ret_dtype, types.Float):
@@ -436,10 +436,10 @@ def _numpy_sum(typingctx, aryty, axisty):
         # For non-floating point types, use builder.add
         add_func = lambda builder, _, res_ptr, value: builder.store(builder.add(builder.load(res_ptr), value), res_ptr)
 
-    sig = ret_dtype(aryty, axisty)
+    sig = ret_dtype(aryty)
 
     def codegen(context, builder, sig, args):
-        ary, _ = args
+        ary, = args
 
         ary = make_array(aryty)(context, builder, ary)
         zero = context.get_constant(ret_dtype, 0)
@@ -555,7 +555,9 @@ def array_sum(a, axis=None, dtype=None):
         axis_length = axis.count if isinstance(axis, types.UniTuple) else 1
         if is_nonelike(axis) or a.ndim == axis_length:
             def array_sum_impl(a, axis=None, dtype=None):
-                res = _numpy_sum(a, axis)
+                if axis is not None and axis_length >= a.ndim:
+                    raise ValueError(f"axis {axis} is out of bounds for array of dimension {a.ndim}")
+                res = _numpy_sum(a)
                 return _to_dtype(res, dtype)
         else:
             def array_sum_impl(a, axis=None, dtype=None):

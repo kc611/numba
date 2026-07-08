@@ -6639,8 +6639,8 @@ def impl_np_vstack(tup):
         return impl
 
 
-if numpy_version >= (2, 0):
-    overload(np.row_stack)(impl_np_vstack)
+# if numpy_version >= (2, 0):
+#     overload(np.row_stack)(impl_np_vstack)
 
 
 @intrinsic
