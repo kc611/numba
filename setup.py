@@ -458,6 +458,11 @@ metadata = dict(
     packages=packages,
     setup_requires=build_requires,
     install_requires=install_requires,
+    entry_points={
+        "numba_context_plugins": [
+            "numpy = numba.np.registrations",
+        ],
+    },
     python_requires=">={}".format(min_python_version),
     license="BSD",
     cmdclass=cmdclass,

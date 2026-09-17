@@ -126,7 +126,6 @@ class CPUContext(BaseContext):
         from numba.np import npdatetime # noqa F401
 
         # Add target specific implementations
-        from numba.np import npyimpl
         from numba.cpython import cmathimpl, mathimpl, printimpl, randomimpl
         from numba.misc import cffiimpl
         from numba.experimental.jitclass.base import ClassBuilder as \
@@ -134,13 +133,17 @@ class CPUContext(BaseContext):
         self.install_registry(cmathimpl.registry)
         self.install_registry(cffiimpl.registry)
         self.install_registry(mathimpl.registry)
-        self.install_registry(npyimpl.registry)
         self.install_registry(printimpl.registry)
         self.install_registry(randomimpl.registry)
         self.install_registry(jitclassimpl.class_impl_registry)
 
-        # load 3rd party extensions
+        # load 3rd party extensions, which also imports the context plugin
+        # providers as entry points
         numba.core.entrypoints.init_all()
+
+        # run the context plugins contributed by those providers
+        from numba.core import context_plugins
+        context_plugins.target_plugins.run(self)
 
         # Register NumPy-specific boxing/unboxing implementations, which live
         # in the NumPy module.

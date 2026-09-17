@@ -815,7 +815,6 @@ class Context(BaseContext):
             enumdecl,
             listdecl,
             mathdecl,
-            npydecl,
             setdecl,
             dictdecl,
         )
@@ -824,6 +823,11 @@ class Context(BaseContext):
         self.install_registry(enumdecl.registry)
         self.install_registry(listdecl.registry)
         self.install_registry(mathdecl.registry)
-        self.install_registry(npydecl.registry)
+
+        # ensure context plugin providers are imported, then run them
+        from numba.core import entrypoints, context_plugins
+        entrypoints.init_all()
+        context_plugins.typing_plugins.run(self)
+
         self.install_registry(setdecl.registry)
         self.install_registry(dictdecl.registry)
